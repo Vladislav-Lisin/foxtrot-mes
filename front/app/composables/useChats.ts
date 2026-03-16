@@ -1,5 +1,6 @@
 export interface Chat {
   id: number
+  userTag: string
   username: string
   type: string
   lastMessage: string
@@ -10,6 +11,7 @@ export const useChats = () => {
   const chats = ref<Chat[]>([
     {
       id: 1,
+      userTag: '@baobab',
       username: 'Алексей',
       type: 'personal',
       lastMessage: 'Привет, как дела?',
@@ -17,6 +19,7 @@ export const useChats = () => {
     },
     {
       id: 2,
+      userTag: '@foxtrot',
       username: 'Foxtrot Dev',
       type: 'servers',
       lastMessage: 'Новый коммит в репозитории',
@@ -24,6 +27,7 @@ export const useChats = () => {
     },
     {
       id: 3,
+      userTag: '@LadiesMan217',
       username: 'Мария',
       type: 'personal',
       lastMessage: 'Отправь файл пожалуйста',
@@ -32,14 +36,22 @@ export const useChats = () => {
   ])
   const activeFilter = useState('chatFilter', () => 'all')
 
+  const selectedChat = useState<Chat | null>('selectedChat', () => null)
+
   const filteredChats = computed(() => {
     if (activeFilter.value === 'all') return chats.value
     return chats.value.filter(c => c.type === activeFilter.value)
   })
 
+  const selectChat = (chat: Chat) => {
+    selectedChat.value = chat
+  }
+
   return {
     chats,
     activeFilter,
-    filteredChats
+    filteredChats,
+    selectedChat,
+    selectChat
   }
 }

@@ -1,7 +1,7 @@
 <script setup>
 import UsersStory from "./UsersStory.vue";
 
-const { filteredChats } = useChats();
+const { filteredChats, selectChat } = useChats();
 </script>
 
 <template>
@@ -9,7 +9,9 @@ const { filteredChats } = useChats();
     v-for="chat in filteredChats"
     :key="chat.id"
     :avatar="chat.avatar"
+    :tag="chat.userTag"
     :username="chat.username"
-    :lastMessage="chat.lastMessage"
+    :last-message="chat.lastMessage"
+    @select="selectChat(chat)"
   />
 </template>

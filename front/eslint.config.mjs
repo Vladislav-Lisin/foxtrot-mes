@@ -7,7 +7,8 @@ export default withNuxt(
       'vue/max-attributes-per-line': 'off',
       '@stylistic/quotes': 'off',
       '@stylistic/semi': 'off',
-      '@stylistic/comma-dangle': 'off'
+      '@stylistic/comma-dangle': 'off',
+      "vue/attributes-order": "off"
     }
   }
 )

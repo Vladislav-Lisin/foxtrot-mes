@@ -1,10 +1,16 @@
 <script setup lang="ts">
 import * as z from "zod";
 import type { FormSubmitEvent, AuthFormField } from "@nuxt/ui";
-
-const toast = useToast();
+import { registerUser } from "~/api/auth";
 
 const fields: AuthFormField[] = [
+  {
+    name: "username",
+    type: "text",
+    label: "Username",
+    placeholder: "Введите username",
+    required: true,
+  },
   {
     name: "email",
     type: "email",
@@ -25,38 +31,48 @@ const fields: AuthFormField[] = [
     type: "password",
     placeholder: "Введите пароль повторно",
     required: true,
-  }
-];
-
-const providers = [
-  {
-    label: "Google",
-    icon: "i-simple-icons-google",
-    onClick: () => {
-      toast.add({ title: "Google", description: "Login with Google" });
-    },
-  },
-  {
-    label: "GitHub",
-    icon: "i-simple-icons-github",
-    onClick: () => {
-      toast.add({ title: "GitHub", description: "Login with GitHub" });
-    },
   },
 ];
 
-const schema = z.object({
-  email: z.email("Некорректный email"),
-  password: z
-    .string("Необходимо ввести корректный пароль")
-    .min(8, "Должно быть не меньше 8 символов"),
-});
+const schema = z
+  .object({
+    username: z.string().min(3, "Минимум 3 символа"),
+    email: z.string().email("Некорректный email"),
+    password: z.string().min(8, "Минимум 8 символов"),
+    repassword: z.string(),
+  })
+  .refine(data => data.password === data.repassword, {
+    message: "Пароли не совпадают",
+    path: ["repassword"],
+  });
 
 type Schema = z.output<typeof schema>;
 
-function onSubmit(payload: FormSubmitEvent<Schema>) {
-  console.log("Submitted", payload);
-  navigateTo('/user/panel')
+const loading = ref(false);
+const error = ref("");
+
+async function onSubmit(payload: FormSubmitEvent<Schema>) {
+  try {
+    loading.value = true;
+    error.value = "";
+
+    await registerUser({
+      username: payload.data.username,
+      email: payload.data.email,
+      password: payload.data.password,
+    });
+
+    // успех → редирект
+    navigateTo("/user/panel");
+  } catch (e: unknown) {
+    if (e instanceof Error) {
+      error.value = e.message
+    } else {
+      error.value = "Ошибка регистрации"
+    }
+  } finally {
+    loading.value = false;
+  }
 }
 </script>
 
@@ -66,16 +82,21 @@ function onSubmit(payload: FormSubmitEvent<Schema>) {
       <UAuthForm
         :schema="schema"
         title="Регистрация"
-        description="Зарегистрируйте свой аккаунт."
+        description="Создайте аккаунт"
         icon="i-lucide-user"
         :fields="fields"
-        :providers="providers"
         :submit="{
-          label: 'Войти',
-          color: 'warning'
+          label: loading ? 'Загрузка...' : 'Зарегистрироваться',
+          color: 'warning',
+          disabled: loading
         }"
         @submit="onSubmit"
       />
+
+      <!-- ошибка -->
+      <p v-if="error" class="text-red-500 mt-2 text-center">
+        {{ error }}
+      </p>
     </UPageCard>
   </div>
 </template>

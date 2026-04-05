@@ -2,8 +2,6 @@
 import * as z from "zod";
 import type { FormSubmitEvent, AuthFormField } from "@nuxt/ui";
 
-const toast = useToast();
-
 const fields: AuthFormField[] = [
   {
     name: "email",
@@ -21,23 +19,6 @@ const fields: AuthFormField[] = [
   },
 ];
 
-const providers = [
-  {
-    label: "Google",
-    icon: "i-simple-icons-google",
-    onClick: () => {
-      toast.add({ title: "Google", description: "Login with Google" });
-    },
-  },
-  {
-    label: "GitHub",
-    icon: "i-simple-icons-github",
-    onClick: () => {
-      toast.add({ title: "GitHub", description: "Login with GitHub" });
-    },
-  },
-];
-
 const schema = z.object({
   email: z.email("Некорректный email"),
   password: z
@@ -49,7 +30,7 @@ type Schema = z.output<typeof schema>;
 
 function onSubmit(payload: FormSubmitEvent<Schema>) {
   console.log("Submitted", payload);
-  navigateTo('/user/panel')
+  navigateTo("/user/panel");
 }
 </script>
 
@@ -62,7 +43,6 @@ function onSubmit(payload: FormSubmitEvent<Schema>) {
         description="Войдите в свой аккаунт"
         icon="i-lucide-user"
         :fields="fields"
-        :providers="providers"
         :submit="{
           label: 'Войти',
           color: 'warning'
@@ -70,7 +50,13 @@ function onSubmit(payload: FormSubmitEvent<Schema>) {
         @submit="onSubmit"
       />
       <div class="flex justify-center">
-        <UButton class="w-full justify-center" to="/registration" color="warning" variant="outline" label="Зарегистрироваться" />
+        <UButton
+          class="w-full justify-center"
+          to="/registration"
+          color="warning"
+          variant="outline"
+          label="Зарегистрироваться"
+        />
       </div>
     </UPageCard>
   </div>

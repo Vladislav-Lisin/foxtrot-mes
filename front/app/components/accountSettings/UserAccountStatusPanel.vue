@@ -1,7 +1,27 @@
 <script setup lang="ts">
 import UserAccountSettings from "./SettingsPanel.vue";
 
+type WeatherData = {
+  name: string
+  main: {
+    temp: number
+  }
+  weather: {
+    description: string
+  }[]
+};
+
 const isSettingsOpen = ref(false);
+const isWeatherOpen = ref(false);
+
+const weather = ref<WeatherData | null>(null);
+
+const loadWeather = async () => {
+  weather.value = null;
+
+  const data = await $fetch<WeatherData>("/api/weather");
+  weather.value = data;
+};
 
 defineProps({
   userID: String,
@@ -30,6 +50,17 @@ defineProps({
       label="Настройки"
       @click="isSettingsOpen = true"
     />
+    <UButton
+      class="mt-2 h-7 w-full justify-center"
+      label="Погода"
+      @click="isWeatherOpen = true; loadWeather()"
+    />
+
+    <UModal v-model:open="isSettingsOpen">
+      <template #content>
+        <UserAccountSettings @close="isSettingsOpen = false" />
+      </template>
+    </UModal>
 
     <UModal
       v-model:open="isSettingsOpen"
@@ -37,6 +68,17 @@ defineProps({
     >
       <template #content>
         <UserAccountSettings @close="isSettingsOpen = false" />
+      </template>
+    </UModal>
+
+    <UModal v-model:open="isWeatherOpen">
+      <template #content>
+        <div class="p-5 text-white">
+          <div v-if="weather">
+            <p>Город: {{ weather.name }}</p>
+            <p>Температура: {{ weather.main.temp }} °C</p>
+          </div>
+        </div>
       </template>
     </UModal>
   </aside>

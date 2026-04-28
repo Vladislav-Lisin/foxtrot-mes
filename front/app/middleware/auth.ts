@@ -1,0 +1,3 @@
+definePageMeta({
+  middleware: 'auth'
+})

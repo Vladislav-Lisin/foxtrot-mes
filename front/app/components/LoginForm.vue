@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import * as z from "zod";
 import type { FormSubmitEvent, AuthFormField } from "@nuxt/ui";
+import { loginUser } from "~/api/auth";
+import { useUserState } from "~/composables/userState";
+
+const { setUser } = useUserState();
 
 const fields: AuthFormField[] = [
   {
@@ -27,10 +31,32 @@ const schema = z.object({
 });
 
 type Schema = z.output<typeof schema>;
+const loading = ref(false);
+const error = ref("");
 
-function onSubmit(payload: FormSubmitEvent<Schema>) {
-  console.log("Submitted", payload);
-  navigateTo("/user/panel");
+async function onSubmit(payload: FormSubmitEvent<Schema>) {
+  try {
+    loading.value = true;
+    error.value = "";
+
+    const result = await loginUser({
+      email: payload.data.email,
+      password: payload.data.password,
+    });
+
+    setUser(result);
+
+    // успех → редирект
+    navigateTo("/user/panel");
+  } catch (e: unknown) {
+    if (e instanceof Error) {
+      error.value = e.message
+    } else {
+      error.value = "Ошибка регистрации"
+    }
+  } finally {
+    loading.value = false;
+  }
 }
 </script>
 
@@ -41,7 +67,7 @@ function onSubmit(payload: FormSubmitEvent<Schema>) {
         :schema="schema"
         title="Авторизация"
         description="Войдите в свой аккаунт"
-        icon="i-lucide-user"
+        icon="i-lucide-door-open"
         :fields="fields"
         :submit="{
           label: 'Войти',
@@ -49,15 +75,6 @@ function onSubmit(payload: FormSubmitEvent<Schema>) {
         }"
         @submit="onSubmit"
       />
-      <div class="flex justify-center">
-        <UButton
-          class="w-full justify-center"
-          to="/registration"
-          color="warning"
-          variant="outline"
-          label="Зарегистрироваться"
-        />
-      </div>
     </UPageCard>
   </div>
 </template>

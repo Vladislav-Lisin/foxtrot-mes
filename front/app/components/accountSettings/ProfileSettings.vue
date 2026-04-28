@@ -7,6 +7,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { user } = useUserState();
 
 const emit = defineEmits(["close", "save"]);
 
@@ -27,7 +28,7 @@ function saveProfile() {
 <template>
   <div class="flex gap-3 p-4 flex-col items-center w-full">
     <img
-      :src="props.avatar"
+      :src="user?.avatarUrl"
       class="w-28 h-28 md:w-40 md:h-40 rounded-full object-cover"
       alt="avatar"
     >

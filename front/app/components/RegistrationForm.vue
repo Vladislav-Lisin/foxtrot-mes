@@ -2,6 +2,9 @@
 import * as z from "zod";
 import type { FormSubmitEvent, AuthFormField } from "@nuxt/ui";
 import { registerUser } from "~/api/auth";
+import { useUserState } from "~/composables/userState";
+
+const { setUser } = useUserState();
 
 const fields: AuthFormField[] = [
   {
@@ -56,11 +59,13 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
     loading.value = true;
     error.value = "";
 
-    await registerUser({
+    const result = await registerUser({
       username: payload.data.username,
       email: payload.data.email,
       password: payload.data.password,
     });
+
+    setUser(result);
 
     // успех → редирект
     navigateTo("/user/panel");

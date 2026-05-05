@@ -2,17 +2,12 @@
 import ProfileSettings from "./ProfileSettings.vue";
 import SupportPanel from "./SupportPanel.vue";
 
-const avatarSrc = ref("/ava.jpg");
-const firstName = ref("Vladislav");
-const lastName = ref("Lisin");
-const userTag = ref("lis12");
 const activeSettings = ref('account');
-
 const emit = defineEmits(["close"]);
 </script>
 
 <template>
-  <div class="flex justify-end p-2">
+  <div class="flex justify-end p-2 shrink-0">
     <UButton
       class="rounded-full"
       icon="i-lucide-x"
@@ -22,7 +17,7 @@ const emit = defineEmits(["close"]);
       @click="emit('close')"
     />
   </div>
-  <div class="flex flex-col md:flex-row h-full overflow-hidden">
+  <div class="flex flex-col md:flex-row flex-1 overflow-hidden">
     <UCard class="md:flex-[0_0_22%] md:min-w-[16rem] md:max-w-[22rem] rounded-none">
       <UFieldGroup class="flex flex-col gap-2">
         <UButton
@@ -43,14 +38,8 @@ const emit = defineEmits(["close"]);
         />
       </UFieldGroup>
     </UCard>
-    <UCard class="flex-1 rounded-none overflow-y-auto">
-      <ProfileSettings
-        v-if="activeSettings === 'account'"
-        :avatar="avatarSrc"
-        :first-name="firstName"
-        :last-name="lastName"
-        :user-tag="userTag"
-      />
+    <UCard class="flex-1 rounded-none overflow-y-auto overflow-x-hidden">
+      <ProfileSettings v-if="activeSettings === 'account'" />
       <SupportPanel v-else-if="activeSettings === 'support'" />
     </UCard>
   </div>

@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import UsersStory from "./UsersStory.vue";
 import CommunityCreationForm from "../communities/CommunityCreationForm.vue";
 
@@ -26,7 +26,7 @@ const isCreateCommunity = ref(false);
 
   <UsersStory
     v-for="chat in filteredChats"
-    :key="chat.id"
+    :key="chat.chatId ?? chat.partnerId"
     :avatar="chat.avatar"
     :tag="chat.userTag"
     :username="chat.username"

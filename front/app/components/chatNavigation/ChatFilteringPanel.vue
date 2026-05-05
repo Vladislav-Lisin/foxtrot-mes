@@ -1,5 +1,5 @@
-<script setup>
-const { activeFilter } = useChats();
+<script setup lang="ts">
+const { activeFilter, searchTag, searchChat } = useChats();
 </script>
 
 <template>
@@ -7,7 +7,9 @@ const { activeFilter } = useChats();
     icon="i-lucide-search"
     size="md"
     variant="outline"
-    placeholder="Поиск по id..."
+    v-model="searchTag"
+    placeholder="Поиск по тегу (можно с @)"
+    @keyup.enter="searchChat()"
   />
   <UFieldGroup orientation="horizontal">
     <UButton

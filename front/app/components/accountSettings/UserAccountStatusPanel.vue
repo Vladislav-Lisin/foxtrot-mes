@@ -34,7 +34,7 @@ defineProps({
 
     <UModal
       v-model:open="isSettingsOpen"
-      :ui="{ content: 'max-w-3xl w-full max-h-[80vh]' }"
+      :ui="{ content: 'max-w-4xl w-full h-[80vh] overflow-hidden flex flex-col' }"
     >
       <template #content>
         <SettingsPanel @close="isSettingsOpen = false" />

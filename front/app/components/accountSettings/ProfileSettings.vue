@@ -1,27 +1,58 @@
 <script setup lang="ts">
-interface Props {
-  avatar: string
-  firstName: string
-  lastName: string
-  userTag: string
-}
+import { useUserState } from "~/composables/userState";
+import { updateUserSettings } from "~/api/settings";
 
-const props = defineProps<Props>();
-const { user } = useUserState();
+const { user, setUser } = useUserState();
 
 const emit = defineEmits(["close", "save"]);
 
-// локальное состояние (для редактирования)
-const firstName = ref(props.firstName);
-const lastName = ref(props.lastName);
-const userTag = ref(props.userTag);
+const firstName = ref("");
+const lastName = ref("");
+const userTag = ref("");
+const isSaving = ref(false);
+const errorMessage = ref<string | null>(null);
 
-function saveProfile() {
-  emit("save", {
-    firstName: firstName.value,
-    lastName: lastName.value,
-    tag: userTag.value,
-  });
+watch(
+  user,
+  (value) => {
+    firstName.value = value?.username ?? "";
+    lastName.value = "";
+    userTag.value = value?.tag ?? "";
+  },
+  { immediate: true }
+);
+
+async function saveProfile() {
+  if (!user.value) return;
+
+  isSaving.value = true;
+  errorMessage.value = null;
+
+  try {
+    const result = await updateUserSettings({
+      username: firstName.value.trim(),
+      tag: userTag.value.trim(),
+    });
+
+    setUser({
+      ...user.value,
+      username: result.username,
+      tag: result.tag,
+    });
+
+    emit("save", {
+      firstName: firstName.value,
+      lastName: lastName.value,
+      tag: userTag.value,
+    });
+  } catch (error) {
+    errorMessage.value = error instanceof Error
+      ? error.message
+      : "Не удалось сохранить настройки пользователя";
+    console.error(error);
+  } finally {
+    isSaving.value = false;
+  }
 }
 </script>
 
@@ -45,15 +76,8 @@ function saveProfile() {
         placeholder="Имя"
       />
 
-      <UInput
-        v-model="lastName"
-        size="xl"
-        variant="outline"
-        placeholder="Фамилия"
-      />
-
       <p class="text-gray-400 mt-1 text-sm">
-        Укажите имя и фамилию для Вашего профиля.
+        Укажите имя для Вашего профиля.
       </p>
 
       <UInput
@@ -65,7 +89,7 @@ function saveProfile() {
       />
 
       <p class="text-gray-400 mt-1 text-sm">
-        Придумайте уникальный ID вашего профиля.
+        Придумайте @tag для Вашего профиля.
       </p>
     </UFieldGroup>
 
@@ -74,7 +98,12 @@ function saveProfile() {
       color="warning"
       label="Готово"
       variant="subtle"
+      :disabled="isSaving"
       @click="saveProfile"
     />
+
+    <p v-if="errorMessage" class="mt-3 text-sm text-red-400">
+      {{ errorMessage }}
+    </p>
   </div>
 </template>

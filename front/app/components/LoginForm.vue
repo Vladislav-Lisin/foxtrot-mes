@@ -44,7 +44,7 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
       password: payload.data.password,
     });
 
-    setUser(result);
+    setUser(result.user ?? result);
 
     // успех → редирект
     navigateTo("/user/panel");

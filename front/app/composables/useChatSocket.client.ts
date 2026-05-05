@@ -13,6 +13,7 @@ let connected = false
 let activeToken: string | null = null
 let previewsSub: StompSubscription | null = null
 let personalSub: StompSubscription | null = null
+let currentHandlers: ChatSocketHandlers | null = null
 
 function safeJson<T>(frame: IMessage): T | null {
   try {
@@ -23,6 +24,25 @@ function safeJson<T>(frame: IMessage): T | null {
 }
 
 export const useChatSocket = () => {
+  const reconnectUserQueues = () => {
+    if (!client) return
+    const handlers = currentHandlers
+    if (!handlers) return
+
+    previewsSub?.unsubscribe()
+    personalSub?.unsubscribe()
+
+    previewsSub = client.subscribe("/user/queue/chats", (frame) => {
+      const dto = safeJson<ChatPreviewDTO>(frame)
+      if (dto) handlers.onPreview(dto)
+    })
+
+    personalSub = client.subscribe("/user/queue/messages", (frame) => {
+      const msg = safeJson<ChatMessage>(frame)
+      if (msg) handlers.onPersonalStatus(msg)
+    })
+  }
+
   const ensureConnected = async (params: {
     accessToken: string
     baseHttpUrl?: string // default http://localhost:8080
@@ -36,8 +56,9 @@ export const useChatSocket = () => {
     }
 
     activeToken = params.accessToken
+    currentHandlers = params.handlers
 
-    if (client && connected) return client
+    if (client?.connected) return client
 
     if (!client) {
       client = new Client({
@@ -51,31 +72,19 @@ export const useChatSocket = () => {
         debug: () => {},
         onConnect: () => {
           connected = true
-          params.handlers.onConnectedChange?.(true)
-
-          previewsSub?.unsubscribe()
-          personalSub?.unsubscribe()
-
-          previewsSub = client!.subscribe("/user/queue/chats", (frame) => {
-            const dto = safeJson<ChatPreviewDTO>(frame)
-            if (dto) params.handlers.onPreview(dto)
-          })
-
-          personalSub = client!.subscribe("/user/queue/messages", (frame) => {
-            const msg = safeJson<ChatMessage>(frame)
-            if (msg) params.handlers.onPersonalStatus(msg)
-          })
+          currentHandlers?.onConnectedChange?.(true)
+          reconnectUserQueues()
         },
         onDisconnect: () => {
           connected = false
-          params.handlers.onConnectedChange?.(false)
+          currentHandlers?.onConnectedChange?.(false)
         },
-        onStompError: () => {
-          // keep silent; UI can observe connected flag if needed
+        onStompError: (frame) => {
+          console.error("[stomp] broker error", frame?.headers, frame?.body)
         },
         onWebSocketClose: () => {
           connected = false
-          params.handlers.onConnectedChange?.(false)
+          currentHandlers?.onConnectedChange?.(false)
         },
       })
     } else {
@@ -98,19 +107,29 @@ export const useChatSocket = () => {
       await client.deactivate()
       client = null
     }
+    currentHandlers = null
   }
 
   const subscribeChat = (chatId: string, onMessage: (msg: ChatMessage) => void) => {
-    if (!client || !connected) return null
+    if (!client?.connected) return null
     return client.subscribe(`/topic/chat/${chatId}`, (frame) => {
       const msg = safeJson<ChatMessage>(frame)
       if (msg) onMessage(msg)
     })
   }
 
-  const send = (destination: string, body: unknown) => {
-    if (!client || !connected) throw new Error("WS not connected")
-    client.publish({ destination, body: JSON.stringify(body) })
+  const waitUntilConnected = async (timeoutMs = 5000) => {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      if (client?.connected) return client
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    throw new Error(`WebSocket not connected within ${timeoutMs}ms`)
+  }
+
+  const send = async (destination: string, body: unknown) => {
+    await waitUntilConnected()
+    client!.publish({ destination, body: JSON.stringify(body) })
   }
 
   return {
@@ -118,9 +137,12 @@ export const useChatSocket = () => {
     disconnect,
     subscribeChat,
     send,
+    waitUntilConnected,
     get connected() {
       return connected
     },
+    get stompConnected() {
+      return !!client?.connected
+    },
   }
 }
-

@@ -29,6 +29,7 @@ export type ChatMessage = {
   content?: string
   timestamp?: number | string
   status?: MessageStatus
+  clientTempId?: string
 }
 
 export type SendMessageRequest = {
@@ -38,5 +39,26 @@ export type SendMessageRequest = {
 
 export type ReadMessageRequest = {
   chatId: string
+}
+
+export type ChatHistoryMessage = {
+  id: string
+  senderId: string
+  content: string | number[] | null
+  createdAt: string
+  status: MessageStatus | string
+  isDeleted: boolean
+}
+
+export type GetChatHistoryResponse = {
+  history: {
+    content: ChatHistoryMessage[]
+    totalElements: number
+    totalPages: number
+    number: number
+    size: number
+    first: boolean
+    last: boolean
+  }
 }
 

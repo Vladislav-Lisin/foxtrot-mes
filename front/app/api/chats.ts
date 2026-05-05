@@ -1,5 +1,5 @@
 import { secureFetch } from "./auth";
-import type { ChatFinderResponse } from "~/types/chat";
+import type { ChatFinderResponse, GetChatHistoryResponse } from "~/types/chat";
 
 export const findChatByTag = async (tag: string) => {
   const response = await secureFetch("http://localhost:8080/chats/finder", {
@@ -35,4 +35,18 @@ export const createPrivateChat = async (partnerId: string) => {
   }
 
   return (await response.json()) as ChatFinderResponse;
+};
+
+export const getChatHistory = async (chatId: string, page = 0, size = 30) => {
+  const url = `http://localhost:8080/chats/${chatId}/history?page=${page}&size=${size}`;
+  const response = await secureFetch(url, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Не удалось загрузить историю чата");
+  }
+
+  return (await response.json()) as GetChatHistoryResponse;
 };

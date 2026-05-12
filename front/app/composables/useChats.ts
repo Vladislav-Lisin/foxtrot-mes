@@ -1,6 +1,12 @@
 import type { StompSubscription } from "@stomp/stompjs"
-import { createPrivateChat, findChatByTag, getChatHistory } from "~/api/chats"
-import type { ChatFinderResponse, ChatMessage, ChatPreviewDTO, SendMessageRequest } from "~/types/chat"
+import { createPrivateChat, findChatByTag, getAllChatsPreview, getChatHistory } from "~/api/chats"
+import type {
+  ChatFinderResponse,
+  ChatMessage,
+  ChatPreviewDTO,
+  MessageStatus,
+  SendMessageRequest
+} from "~/types/chat"
 
 export type ChatFilter = "all" | "personal" | "servers"
 
@@ -13,11 +19,13 @@ export type ChatPreviewUI = {
   type: "personal"
   lastMessage: string
   lastMessageAt: string | null
+  /** Статус последнего сообщения текущего пользователя (из WS / локально при отправке) */
+  lastOutgoingStatus?: MessageStatus | null
   alreadyExists: boolean
 }
 
 function normalizeTagForRequest(tag: string) {
-  const t = tag.trim()
+  const t = tag.replace(/\s+/g, "").trim()
   if (!t) return ""
   return t.startsWith("@") ? t.slice(1) : t
 }
@@ -35,13 +43,29 @@ function upsertPreview(list: ChatPreviewUI[], incoming: ChatPreviewUI) {
     if (incoming.chatId && p.chatId) return p.chatId === incoming.chatId
     return p.partnerId === incoming.partnerId
   })
-  const next = idx >= 0
-    ? [...list.slice(0, idx), { ...list[idx], ...incoming }, ...list.slice(idx + 1)]
-    : [incoming, ...list]
-  return sortPreviews(next)
+
+  if (idx >= 0) {
+    const existing = list[idx]!
+    const merged = { ...existing, ...incoming }
+
+    if (
+      existing.lastOutgoingStatus &&
+      incoming.lastOutgoingStatus == null &&
+      incoming.lastMessage === existing.lastMessage
+    ) {
+      merged.lastOutgoingStatus = existing.lastOutgoingStatus
+    }
+
+    const next = [...list.slice(0, idx), merged, ...list.slice(idx + 1)]
+    return sortPreviews(next)
+  }
+
+  return sortPreviews([incoming, ...list])
 }
 
 function dtoToPreview(dto: ChatPreviewDTO): ChatPreviewUI {
+  const status = dto.status ?? (dto as ChatPreviewDTO & { lastMessageStatus?: MessageStatus }).lastMessageStatus ?? null
+
   return {
     partnerId: dto.partner.id,
     chatId: dto.chatId,
@@ -51,6 +75,7 @@ function dtoToPreview(dto: ChatPreviewDTO): ChatPreviewUI {
     type: "personal",
     lastMessage: dto.lastMessage ?? "",
     lastMessageAt: dto.lastMessageAt ?? null,
+    lastOutgoingStatus: status,
     alreadyExists: true,
   }
 }
@@ -87,6 +112,9 @@ function canonicalUserId(raw: unknown) {
   if (!s) return ""
   return s.replace(/-/g, "")
 }
+
+let chatRealtimeWatchersStarted = false
+let latestSearchRequestId = 0
 
 export const useChats = () => {
   const { token, user } = useUserState()
@@ -138,6 +166,18 @@ export const useChats = () => {
     }
   }
 
+  const loadUserChatPreviews = async () => {
+    if (!process.client) return
+    if (!token.value) return
+
+    try {
+      const previews = await getAllChatsPreview()
+      chatPreviews.value = sortPreviews(previews.map(dtoToPreview))
+    } catch (error) {
+      console.error("Failed to load user chat previews:", error)
+    }
+  }
+
   const connectWsIfNeeded = async () => {
     if (!process.client) return
     if (!token.value) return
@@ -156,11 +196,27 @@ export const useChats = () => {
           const chatId = msg.chatId
           if (!chatId) return
           const list = messagesByChatId.value[chatId] ?? []
+          const myCanon = canonicalUserId(user.value?.id)
 
           if (msg.id) {
             messagesByChatId.value = {
               ...messagesByChatId.value,
               [chatId]: list.map((m) => (m.id === msg.id ? { ...m, status: msg.status } : m)),
+            }
+            const senderCanon = canonicalUserId(msg.senderId)
+            if (
+              msg.status &&
+              myCanon &&
+              senderCanon &&
+              senderCanon === myCanon
+            ) {
+              const p = chatPreviews.value.find((c) => c.chatId === chatId)
+              if (p) {
+                chatPreviews.value = upsertPreview(chatPreviews.value, {
+                  ...p,
+                  lastOutgoingStatus: msg.status as MessageStatus,
+                })
+              }
             }
             return
           }
@@ -170,7 +226,21 @@ export const useChats = () => {
               ...messagesByChatId.value,
               [chatId]: list.map((m) => ({ ...m, status: "READ" })),
             }
+            const p = chatPreviews.value.find((c) => c.chatId === chatId)
+            if (p && myCanon) {
+              const lastOutgoing = [...list].reverse().find((m) => canonicalUserId(m.senderId) === myCanon)
+              if (lastOutgoing) {
+                chatPreviews.value = upsertPreview(chatPreviews.value, {
+                  ...p,
+                  lastOutgoingStatus: "READ",
+                })
+              }
+            }
           }
+        },
+        onTokenExpired: async () => {
+          // Token was refreshed, reconnect WebSocket
+          await connectWsIfNeeded()
         },
       },
     })
@@ -185,19 +255,78 @@ export const useChats = () => {
     isWsConnected.value = false
   }
 
-  if (process.client) {
+  const resetChatUiForAccountSwitch = async () => {
+    if (!process.client) return
+
+    chatPreviews.value = []
+    selectedChat.value = null
+    messagesByChatId.value = {}
+    pendingOutbox.value = {}
+    searchTag.value = ""
+    lastSearchedTag.value = ""
+    chatTopicSub.value?.unsubscribe()
+    chatTopicSub.value = null
+
+    await disconnectWs()
+  }
+
+  const startRealtimeWatchersOnce = () => {
+    if (!process.client || chatRealtimeWatchersStarted) return
+    chatRealtimeWatchersStarted = true
+
+    watch(
+      () => canonicalUserId(user.value?.id),
+      async (id, prevId) => {
+        if (!id && !prevId) return
+        if (id !== prevId) {
+          await resetChatUiForAccountSwitch()
+          if (token.value) await connectWsIfNeeded()
+        }
+      }
+    )
+
     watch(
       () => token.value,
       async (t) => {
         if (!t) {
-          await disconnectWs()
+          await resetChatUiForAccountSwitch()
           return
         }
+        await loadUserChatPreviews()
         await connectWsIfNeeded()
       },
       { immediate: true }
     )
+
+    watch(
+      () => searchTag.value,
+      async (tag) => {
+        const normalized = normalizeTagForRequest(tag)
+        if (!normalized) {
+          latestSearchRequestId += 1
+          isSearching.value = false
+        }
+
+        if (!normalized && lastSearchedTag.value) {
+          lastSearchedTag.value = ""
+          await loadUserChatPreviews()
+        }
+      }
+    )
+
+    const route = useRoute()
+    watch(
+      () => route.path,
+      async (path) => {
+        if (path === "/authorization" || path.startsWith("/authorization/")) {
+          await resetChatUiForAccountSwitch()
+          if (token.value) await connectWsIfNeeded()
+        }
+      }
+    )
   }
+
+  startRealtimeWatchersOnce()
 
   const openChatSubscription = async (chatId: string) => {
     if (!process.client) return
@@ -222,7 +351,8 @@ export const useChats = () => {
               pendingOutbox.value[m.id] === (msg.content ?? "")
         )
         if (optimisticIdx >= 0) {
-          const tempId = list[optimisticIdx].id!
+          const optimisticMessage = list[optimisticIdx]!
+          const tempId = optimisticMessage.id!
           const { [tempId]: _, ...rest } = pendingOutbox.value
           pendingOutbox.value = rest
 
@@ -248,10 +378,17 @@ export const useChats = () => {
       // local preview update
       const preview = chatPreviews.value.find((p) => p.chatId === chatId)
       if (preview) {
+        const myCanon = canonicalUserId(user.value?.id)
+        const senderCanon = canonicalUserId(msg.senderId)
+        const isOutgoing =
+          !!myCanon && !!senderCanon && senderCanon === myCanon
         chatPreviews.value = upsertPreview(chatPreviews.value, {
           ...preview,
           lastMessage: msg.content ?? "",
           lastMessageAt: new Date().toISOString(),
+          ...(isOutgoing && msg.status
+            ? { lastOutgoingStatus: msg.status as MessageStatus }
+            : {}),
           alreadyExists: true,
         })
       }
@@ -283,25 +420,32 @@ export const useChats = () => {
     if (!tag) return
     if (isSearching.value) return
 
-    // When user searches a different tag, clear old previews
-    if (lastSearchedTag.value && lastSearchedTag.value !== tag) {
-      chatPreviews.value = []
-      selectedChat.value = null
-      chatTopicSub.value?.unsubscribe()
-      chatTopicSub.value = null
-      messagesByChatId.value = {}
-    }
+    const requestId = ++latestSearchRequestId
 
+    // Clear old previews immediately whenever a search is performed,
+    // so only the search result is shown.
+    chatPreviews.value = []
+    selectedChat.value = null
+    chatTopicSub.value?.unsubscribe()
+    chatTopicSub.value = null
     isSearching.value = true
 
     try {
       const dto = await findChatByTag(tag)
+      if (requestId !== latestSearchRequestId) return
+
       lastSearchedTag.value = tag
-      const preview = finderToPreview(dto)
-      chatPreviews.value = upsertPreview(chatPreviews.value, preview)
-      await selectChat(preview)
+      chatPreviews.value = [finderToPreview(dto)]
+    } catch (error) {
+      if (requestId !== latestSearchRequestId) return
+
+      lastSearchedTag.value = tag
+      chatPreviews.value = []
+      console.error("Search failed or chat not found:", error)
     } finally {
-      isSearching.value = false
+      if (requestId === latestSearchRequestId) {
+        isSearching.value = false
+      }
     }
   }
 
@@ -351,6 +495,7 @@ export const useChats = () => {
         ...preview,
         lastMessage: content,
         lastMessageAt: new Date().toISOString(),
+        lastOutgoingStatus: "SENT",
         alreadyExists: true,
       })
     }
@@ -388,5 +533,6 @@ export const useChats = () => {
     sendMessage,
     markChatRead,
     connectWsIfNeeded,
+    resetChatUiForAccountSwitch,
   }
 }

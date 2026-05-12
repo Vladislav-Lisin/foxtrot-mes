@@ -9,7 +9,7 @@ const isCreateCommunity = ref(false);
 <template>
   <UButton
     v-if="activeFilter === 'servers'"
-    label="Создать сообщество"
+    label="Создать сервер"
     color="warning"
     variant="soft"
     class="justify-center"
@@ -27,10 +27,11 @@ const isCreateCommunity = ref(false);
   <UsersStory
     v-for="chat in filteredChats"
     :key="chat.chatId ?? chat.partnerId"
-    :avatar="chat.avatar"
+    :avatar="chat.avatar ?? undefined"
     :tag="chat.userTag"
     :username="chat.username"
     :last-message="chat.lastMessage"
+    :last-status="chat.lastOutgoingStatus ?? undefined"
     @select="selectChat(chat)"
   />
 </template>

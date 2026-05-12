@@ -49,6 +49,13 @@ watch(
     scrollEl.value?.scrollTo({ top: scrollEl.value.scrollHeight, behavior: "smooth" });
   }
 );
+
+watch(
+  () => selectedChat.value,
+  () => {
+    messageText.value = "";
+  }
+);
 </script>
 
 <template>
@@ -68,30 +75,29 @@ watch(
         </div>
       </template>
     </UCard>
-    <div ref="scrollEl" class="flex-1 overflow-auto p-4 space-y-2 bg-[#0b1220]">
+    <div ref="scrollEl" class="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 bg-[#0b1220] min-w-0">
       <div v-if="!selectedChat" class="text-gray-400">
         Выберите чат в списке слева
       </div>
       <div v-else-if="!currentMessages.length" class="text-gray-400">
         здесь пока нет сообщений
       </div>
-      <div v-else class="space-y-2">
+      <div v-else class="space-y-2 min-w-0">
         <div
           v-for="msg in currentMessages"
           :key="msg.id || `${msg.chatId}-${msg.timestamp}`"
-          class="flex"
+          class="flex w-full min-w-0"
           :class="isMine(msg.senderId) ? 'justify-end' : 'justify-start'"
         >
-          <UCard
-            variant="soft"
-            class="max-w-[75%]"
-            :ui="{
-              root: isMine(msg.senderId)
-                ? 'rounded-2xl rounded-br-md border border-[#2b5cff55] bg-[#2b5cff1a]'
-                : 'rounded-2xl rounded-bl-md border border-gray-700 bg-[#111a2e]'
-            }"
+          <div
+            class="min-w-0 max-w-[min(75%,36rem)] w-fit rounded-2xl border px-3 py-2"
+            :class="isMine(msg.senderId)
+              ? 'rounded-br-md border-[#2b5cff55] bg-[#2b5cff1a]'
+              : 'rounded-bl-md border-gray-700 bg-[#111a2e]'"
           >
-            <div class="whitespace-pre-wrap break-words text-sm leading-snug text-gray-100">
+            <div
+              class="whitespace-pre-wrap text-sm leading-snug text-gray-100 break-words break-all [overflow-wrap:anywhere]"
+            >
               {{ msg.content }}
             </div>
             <div class="mt-2 flex items-center gap-2 justify-end text-[11px] text-gray-400">
@@ -104,17 +110,20 @@ watch(
                 :label="msg.status || 'SENT'"
               />
             </div>
-          </UCard>
+          </div>
         </div>
       </div>
     </div>
 
-    <form class="p-3 border-t border-gray-700 flex items-center gap-2" @submit.prevent="submitMessage">
+    <form
+      v-if="selectedChat"
+      class="p-3 border-t border-gray-700 flex items-center gap-2"
+      @submit.prevent="submitMessage"
+    >
       <UInput
         v-model="messageText"
         placeholder="Сообщение"
         class="flex-1"
-        :disabled="!selectedChat"
         size="xl"
         variant="outline"
       />
@@ -123,7 +132,7 @@ watch(
         color="warning"
         label="Отправить"
         icon="i-lucide-send"
-        :disabled="!selectedChat || !messageText.trim()"
+        :disabled="!messageText.trim()"
       />
     </form>
   </div>

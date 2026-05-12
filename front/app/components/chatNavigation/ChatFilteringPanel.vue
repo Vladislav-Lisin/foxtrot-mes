@@ -1,5 +1,27 @@
 <script setup lang="ts">
 const { activeFilter, searchTag, searchChat } = useChats();
+let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+const trySearchOnEnter = () => {
+  if (!searchTag.value.trim()) return;
+  if (searchTimeout) {
+    clearTimeout(searchTimeout);
+    searchTimeout = null;
+  }
+  searchChat();
+};
+
+watch(searchTag, (value) => {
+  if (searchTimeout) clearTimeout(searchTimeout);
+  if (!value.trim()) {
+    searchTimeout = null;
+    return;
+  }
+
+  searchTimeout = setTimeout(() => {
+    searchChat();
+  }, 300);
+});
 </script>
 
 <template>
@@ -9,7 +31,7 @@ const { activeFilter, searchTag, searchChat } = useChats();
     variant="outline"
     v-model="searchTag"
     placeholder="Поиск по тегу (можно с @)"
-    @keyup.enter="searchChat()"
+    @keyup.enter="trySearchOnEnter()"
   />
   <UFieldGroup orientation="horizontal">
     <UButton

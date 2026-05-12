@@ -1,11 +1,13 @@
 import SockJS from "sockjs-client"
 import { Client, type IMessage, type StompSubscription } from "@stomp/stompjs"
 import type { ChatMessage, ChatPreviewDTO } from "~/types/chat"
+import { refreshAccessToken } from "~/api/auth"
 
 type ChatSocketHandlers = {
   onPreview: (dto: ChatPreviewDTO) => void
   onPersonalStatus: (msg: ChatMessage) => void
   onConnectedChange?: (connected: boolean) => void
+  onTokenExpired?: () => void
 }
 
 let client: Client | null = null
@@ -62,12 +64,16 @@ export const useChatSocket = () => {
 
     if (!client) {
       client = new Client({
-        webSocketFactory: () => new SockJS(`${baseHttpUrl}/ws`),
+        webSocketFactory: () =>
+          new SockJS(
+            `${baseHttpUrl}/ws?access_token=${encodeURIComponent(params.accessToken)}`
+          ),
         reconnectDelay: 2000,
         heartbeatIncoming: 10000,
         heartbeatOutgoing: 10000,
         connectHeaders: {
           Authorization: `Bearer ${params.accessToken}`,
+          access_token: params.accessToken,
         },
         debug: () => {},
         onConnect: () => {
@@ -79,8 +85,17 @@ export const useChatSocket = () => {
           connected = false
           currentHandlers?.onConnectedChange?.(false)
         },
-        onStompError: (frame) => {
+        onStompError: async (frame) => {
           console.error("[stomp] broker error", frame?.headers, frame?.body)
+          // Check for token expiration
+          if (frame?.headers?.['X-Token-Expired'] === 'true' || frame?.body?.includes('token expired')) {
+            try {
+              await refreshAccessToken()
+              currentHandlers?.onTokenExpired?.()
+            } catch (error) {
+              console.error('Failed to refresh token on stomp error:', error)
+            }
+          }
         },
         onWebSocketClose: () => {
           connected = false
@@ -89,7 +104,10 @@ export const useChatSocket = () => {
       })
     } else {
       // update headers before (re)connect attempt
-      client.connectHeaders = { Authorization: `Bearer ${params.accessToken}` }
+      client.connectHeaders = {
+        Authorization: `Bearer ${params.accessToken}`,
+        access_token: params.accessToken,
+      }
     }
 
     client.activate()

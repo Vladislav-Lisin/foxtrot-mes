@@ -13,7 +13,7 @@ const items = ref(["Открытое", "Закрытое"]);
           class="w-full max-w-xs h-auto mt-10"
         />
         <UText class="font-sofia text-xl font-semibold" align="center">
-          Создание сообщества
+          Создание сервера
         </UText>
       </div>
       <div class="absolute top-3 right-3">
@@ -44,7 +44,7 @@ const items = ref(["Открытое", "Закрытое"]);
       />
     </div>
     <div class="flex justify-center mt-7 mb-6">
-      <UButton label="Создать сообщество" size="lg" />
+      <UButton label="Создать сервер" size="lg" />
     </div>
   </div>
 </template>

@@ -1,5 +1,5 @@
 import { secureFetch } from "./auth";
-import type { ChatFinderResponse, GetChatHistoryResponse } from "~/types/chat";
+import type { ChatFinderResponse, ChatPreviewDTO, GetChatHistoryResponse } from "~/types/chat";
 
 export const findChatByTag = async (tag: string) => {
   const response = await secureFetch("http://localhost:8080/chats/finder", {
@@ -35,6 +35,20 @@ export const createPrivateChat = async (partnerId: string) => {
   }
 
   return (await response.json()) as ChatFinderResponse;
+};
+
+export const getAllChatsPreview = async () => {
+  const response = await secureFetch("http://localhost:8080/chats/all-chats-preview", {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Не удалось загрузить список чатов");
+  }
+
+  const result = await response.json() as { allChats: ChatPreviewDTO[] };
+  return result.allChats;
 };
 
 export const getChatHistory = async (chatId: string, page = 0, size = 30) => {

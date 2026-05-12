@@ -54,8 +54,9 @@ export const secureFetch = async (
     headers,
   });
 
-  // Если получили 401, пытаемся обновить токен
-  if (response.status === 401 && !isRefreshing) {
+  // Если получили 401 или заголовок X-Token-Expired, пытаемся обновить токен
+  if (response.status === 401 || response.headers.get('X-Token-Expired') === 'true') {
+    if (isRefreshing) return response; // avoid infinite loop
     isRefreshing = true;
 
     const newToken = await refreshAccessToken();
@@ -148,4 +149,26 @@ export const fetchMe = async () => {
       return res.json();
     })
     .catch(() => null);
+};
+
+/**
+ * Проактивный рефреш токена
+ */
+export const proactiveRefreshToken = async () => {
+  const { token, tokenCreatedAt } = useUserState();
+  if (!token.value || !tokenCreatedAt.value) return;
+
+  const now = Date.now();
+  const elapsed = now - tokenCreatedAt.value;
+  const ttlMs = 15 * 60 * 1000; // 15 минут
+  const refreshThreshold = 13 * 60 * 1000; // 13 минут
+
+  if (elapsed >= refreshThreshold && elapsed < ttlMs) {
+    try {
+      await refreshAccessToken();
+      console.log('Token refreshed proactively');
+    } catch (error) {
+      console.error('Failed to refresh token proactively:', error);
+    }
+  }
 };

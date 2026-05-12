@@ -18,6 +18,8 @@ export type ChatPreviewDTO = {
   partner: UserResponse
   lastMessage: string | null
   lastMessageAt: string | null
+  status?: MessageStatus | null
+  lastMessageStatus?: MessageStatus | null
 }
 
 export type MessageStatus = "SENT" | "DELIVERED" | "READ"

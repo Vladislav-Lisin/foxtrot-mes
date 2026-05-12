@@ -1,7 +1,7 @@
-import { fetchMe } from "~/api/auth";
+import { fetchMe, proactiveRefreshToken } from "~/api/auth";
 
 export default defineNuxtPlugin(async () => {
-  const { setUser, clearUser, isAuthReady, loadToken, setToken } = useUserState();
+  const { setUser, clearUser, isAuthReady, loadToken, setToken, token } = useUserState();
 
   // Восстанавливаем токен из localStorage
   loadToken();
@@ -21,5 +21,14 @@ export default defineNuxtPlugin(async () => {
   } finally {
     // 👇 ВАЖНО: говорим "проверка завершена"
     isAuthReady.value = true;
+  }
+
+  // Настраиваем проактивный рефреш токена
+  if (token.value) {
+    // Запускаем сразу
+    proactiveRefreshToken();
+
+    // И каждые 5 минут проверяем
+    setInterval(proactiveRefreshToken, 5 * 60 * 1000);
   }
 });

@@ -63,4 +63,3 @@ export type GetChatHistoryResponse = {
     last: boolean
   }
 }
-

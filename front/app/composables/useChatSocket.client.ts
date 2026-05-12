@@ -140,7 +140,7 @@ export const useChatSocket = () => {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {
       if (client?.connected) return client
-      await new Promise((r) => setTimeout(r, 50))
+      await new Promise(r => setTimeout(r, 50))
     }
     throw new Error(`WebSocket not connected within ${timeoutMs}ms`)
   }

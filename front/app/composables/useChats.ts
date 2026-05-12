@@ -49,9 +49,9 @@ function upsertPreview(list: ChatPreviewUI[], incoming: ChatPreviewUI) {
     const merged = { ...existing, ...incoming }
 
     if (
-      existing.lastOutgoingStatus &&
-      incoming.lastOutgoingStatus == null &&
-      incoming.lastMessage === existing.lastMessage
+      existing.lastOutgoingStatus
+      && incoming.lastOutgoingStatus == null
+      && incoming.lastMessage === existing.lastMessage
     ) {
       merged.lastOutgoingStatus = existing.lastOutgoingStatus
     }
@@ -136,7 +136,7 @@ export const useChats = () => {
   const filteredChats = computed(() => {
     const list = chatPreviews.value
     if (activeFilter.value === "all") return list
-    return list.filter((c) => c.type === activeFilter.value)
+    return list.filter(c => c.type === activeFilter.value)
   })
 
   const currentMessages = computed(() => {
@@ -151,7 +151,7 @@ export const useChats = () => {
     // backend returns DESC order; UI usually needs ASC
     const normalized = [...content]
       .reverse()
-      .map((m) => ({
+      .map(m => ({
         id: m.id,
         chatId,
         senderId: m.senderId,
@@ -167,7 +167,7 @@ export const useChats = () => {
   }
 
   const loadUserChatPreviews = async () => {
-    if (!process.client) return
+    if (!import.meta.client) return
     if (!token.value) return
 
     try {
@@ -179,14 +179,14 @@ export const useChats = () => {
   }
 
   const connectWsIfNeeded = async () => {
-    if (!process.client) return
+    if (!import.meta.client) return
     if (!token.value) return
 
     const socket = useChatSocket()
     await socket.ensureConnected({
       accessToken: token.value,
       handlers: {
-        onConnectedChange: (v) => (isWsConnected.value = v),
+        onConnectedChange: v => (isWsConnected.value = v),
         onPreview: (dto) => {
           chatPreviews.value = upsertPreview(chatPreviews.value, dtoToPreview(dto))
         },
@@ -201,16 +201,16 @@ export const useChats = () => {
           if (msg.id) {
             messagesByChatId.value = {
               ...messagesByChatId.value,
-              [chatId]: list.map((m) => (m.id === msg.id ? { ...m, status: msg.status } : m)),
+              [chatId]: list.map(m => (m.id === msg.id ? { ...m, status: msg.status } : m)),
             }
             const senderCanon = canonicalUserId(msg.senderId)
             if (
-              msg.status &&
-              myCanon &&
-              senderCanon &&
-              senderCanon === myCanon
+              msg.status
+              && myCanon
+              && senderCanon
+              && senderCanon === myCanon
             ) {
-              const p = chatPreviews.value.find((c) => c.chatId === chatId)
+              const p = chatPreviews.value.find(c => c.chatId === chatId)
               if (p) {
                 chatPreviews.value = upsertPreview(chatPreviews.value, {
                   ...p,
@@ -224,11 +224,11 @@ export const useChats = () => {
           if (msg.status === "READ") {
             messagesByChatId.value = {
               ...messagesByChatId.value,
-              [chatId]: list.map((m) => ({ ...m, status: "READ" })),
+              [chatId]: list.map(m => ({ ...m, status: "READ" })),
             }
-            const p = chatPreviews.value.find((c) => c.chatId === chatId)
+            const p = chatPreviews.value.find(c => c.chatId === chatId)
             if (p && myCanon) {
-              const lastOutgoing = [...list].reverse().find((m) => canonicalUserId(m.senderId) === myCanon)
+              const lastOutgoing = [...list].reverse().find(m => canonicalUserId(m.senderId) === myCanon)
               if (lastOutgoing) {
                 chatPreviews.value = upsertPreview(chatPreviews.value, {
                   ...p,
@@ -247,7 +247,7 @@ export const useChats = () => {
   }
 
   const disconnectWs = async () => {
-    if (!process.client) return
+    if (!import.meta.client) return
     const socket = useChatSocket()
     chatTopicSub.value?.unsubscribe()
     chatTopicSub.value = null
@@ -256,7 +256,7 @@ export const useChats = () => {
   }
 
   const resetChatUiForAccountSwitch = async () => {
-    if (!process.client) return
+    if (!import.meta.client) return
 
     chatPreviews.value = []
     selectedChat.value = null
@@ -271,7 +271,7 @@ export const useChats = () => {
   }
 
   const startRealtimeWatchersOnce = () => {
-    if (!process.client || chatRealtimeWatchersStarted) return
+    if (!import.meta.client || chatRealtimeWatchersStarted) return
     chatRealtimeWatchersStarted = true
 
     watch(
@@ -329,7 +329,7 @@ export const useChats = () => {
   startRealtimeWatchersOnce()
 
   const openChatSubscription = async (chatId: string) => {
-    if (!process.client) return
+    if (!import.meta.client) return
     await connectWsIfNeeded()
     const socket = useChatSocket()
     await socket.waitUntilConnected()
@@ -345,10 +345,10 @@ export const useChats = () => {
       if (myIdCanon && senderCanon === myIdCanon) {
         const list = messagesByChatId.value[chatId] ?? []
         const optimisticIdx = list.findIndex(
-          (m) =>
-            !!m.id &&
-              m.id.startsWith("temp-") &&
-              pendingOutbox.value[m.id] === (msg.content ?? "")
+          m =>
+            !!m.id
+            && m.id.startsWith("temp-")
+            && pendingOutbox.value[m.id] === (msg.content ?? "")
         )
         if (optimisticIdx >= 0) {
           const optimisticMessage = list[optimisticIdx]!
@@ -376,12 +376,12 @@ export const useChats = () => {
       }
 
       // local preview update
-      const preview = chatPreviews.value.find((p) => p.chatId === chatId)
+      const preview = chatPreviews.value.find(p => p.chatId === chatId)
       if (preview) {
         const myCanon = canonicalUserId(user.value?.id)
         const senderCanon = canonicalUserId(msg.senderId)
-        const isOutgoing =
-          !!myCanon && !!senderCanon && senderCanon === myCanon
+        const isOutgoing
+          = !!myCanon && !!senderCanon && senderCanon === myCanon
         chatPreviews.value = upsertPreview(chatPreviews.value, {
           ...preview,
           lastMessage: msg.content ?? "",
@@ -461,7 +461,7 @@ export const useChats = () => {
   }
 
   const sendMessage = async (content: string) => {
-    if (!process.client) return
+    if (!import.meta.client) return
     if (!token.value) throw new Error("no access token")
 
     if (!selectedChat.value) throw new Error("chat is not selected")
@@ -489,7 +489,7 @@ export const useChats = () => {
       ...messagesByChatId.value,
       [chatId]: [...(messagesByChatId.value[chatId] ?? []), optimistic],
     }
-    const preview = chatPreviews.value.find((p) => p.chatId === chatId)
+    const preview = chatPreviews.value.find(p => p.chatId === chatId)
     if (preview) {
       chatPreviews.value = upsertPreview(chatPreviews.value, {
         ...preview,
@@ -509,7 +509,7 @@ export const useChats = () => {
 
   const markChatRead = async () => {
     const chatId = selectedChat.value?.chatId
-    if (!process.client) return
+    if (!import.meta.client) return
     if (!chatId) return
     const socket = useChatSocket()
     await connectWsIfNeeded()

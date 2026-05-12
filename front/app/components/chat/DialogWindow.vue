@@ -16,9 +16,9 @@ const normalizeId = (raw: unknown) =>
     : "";
 
 const isMine = (senderId?: string) =>
-  !!senderId &&
-  !!user.value?.id &&
-  normalizeId(senderId) === normalizeId(user.value.id);
+  !!senderId
+  && !!user.value?.id
+  && normalizeId(senderId) === normalizeId(user.value.id);
 
 const formatTime = (v: unknown) => {
   const d = typeof v === "number" ? new Date(v) : new Date(String(v));

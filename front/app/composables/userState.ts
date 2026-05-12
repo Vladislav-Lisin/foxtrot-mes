@@ -20,7 +20,7 @@ export const useUserState = () => {
 
   const setToken = (t: string | null) => {
     token.value = t;
-    if (process.client) {
+    if (import.meta.client) {
       if (t) {
         const now = Date.now();
         tokenCreatedAt.value = now;
@@ -35,7 +35,7 @@ export const useUserState = () => {
   };
 
   const loadToken = () => {
-    if (process.client) {
+    if (import.meta.client) {
       const storedToken = localStorage.getItem(TOKEN_KEY);
       const storedCreated = localStorage.getItem(TOKEN_CREATED_KEY);
       if (storedToken) {

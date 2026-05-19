@@ -22,7 +22,7 @@ public class SecurityConfig {
         http.cors(cors -> {})
             .csrf(csrf ->csrf.disable())
             .authorizeHttpRequests(auth -> auth
-                    .requestMatchers("/auth/register", "/auth/authorization").permitAll()
+                    .requestMatchers("/auth/register", "/auth/authorization", "/auth/refresh").permitAll()
                     // SockJS performs HTTP requests to /ws/** before STOMP CONNECT (no Authorization header yet).
                     // Actual auth happens in WebSocketAuthInterceptor on STOMP CONNECT with Bearer token.
                     .requestMatchers("/ws", "/ws/**").permitAll()
@@ -33,3 +33,4 @@ public class SecurityConfig {
         return http.build();
     }
 }
+

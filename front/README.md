@@ -57,4 +57,14 @@ Locally preview production build:
 pnpm preview
 ```
 
+## Backend configuration
+
+This frontend is configured to use the Render backend at `https://foxtrot-backend-4s11.onrender.com` by default.
+
+If you need to override the API host, create a `.env` file and set:
+
+```bash
+NUXT_PUBLIC_API_BASE=https://foxtrot-backend-4s11.onrender.com
+```
+
 Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.

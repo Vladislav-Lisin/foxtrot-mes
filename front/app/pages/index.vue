@@ -1,5 +1,9 @@
+<script setup lang="ts">
+definePageMeta({
+  middleware: [() => navigateTo("/authorization")]
+});
+</script>
+
 <template>
-  <div>
-    Home page
-  </div>
+  <div />
 </template>

@@ -1,10 +1,11 @@
 import { secureFetch } from "./auth";
+import { apiBase } from "./apiBase";
 
 export const updateUserSettings = async (data: {
   username: string
   tag: string
 }) => {
-  const response = await secureFetch("http://localhost:8080/settings/profile", {
+  const response = await secureFetch(`${apiBase()}/settings/profile`, {
     method: "PUT",
     body: JSON.stringify(data),
   });

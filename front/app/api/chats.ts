@@ -1,8 +1,9 @@
 import { secureFetch } from "./auth";
+import { apiBase } from "./apiBase";
 import type { ChatFinderResponse, ChatPreviewDTO, GetChatHistoryResponse } from "~/types/chat";
 
 export const findChatByTag = async (tag: string) => {
-  const response = await secureFetch("http://localhost:8080/chats/finder", {
+  const response = await secureFetch(`${apiBase()}/chats/finder`, {
     method: "POST",
     body: JSON.stringify({ tag }),
   });
@@ -24,7 +25,7 @@ export const findChatByTag = async (tag: string) => {
 };
 
 export const createPrivateChat = async (partnerId: string) => {
-  const response = await secureFetch("http://localhost:8080/chats/create-private", {
+  const response = await secureFetch(`${apiBase()}/chats/create-private`, {
     method: "POST",
     body: JSON.stringify({ partnerId }),
   });
@@ -38,7 +39,7 @@ export const createPrivateChat = async (partnerId: string) => {
 };
 
 export const getAllChatsPreview = async () => {
-  const response = await secureFetch("http://localhost:8080/chats/all-chats-preview", {
+  const response = await secureFetch(`${apiBase()}/chats/all-chats-preview`, {
     method: "GET",
   });
 
@@ -52,7 +53,7 @@ export const getAllChatsPreview = async () => {
 };
 
 export const getChatHistory = async (chatId: string, page = 0, size = 30) => {
-  const url = `http://localhost:8080/chats/${chatId}/history?page=${page}&size=${size}`;
+  const url = `${apiBase()}/chats/${chatId}/history?page=${page}&size=${size}`;
   const response = await secureFetch(url, {
     method: "GET",
   });

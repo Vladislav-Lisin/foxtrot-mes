@@ -1,3 +1,5 @@
+import { apiBase } from "./apiBase";
+
 // Флаг для предотвращения бесконечного цикла refresh запросов
 let isRefreshing = false;
 
@@ -5,7 +7,7 @@ let isRefreshing = false;
  * Обновляет access token используя refresh token
  */
 export const refreshAccessToken = async () => {
-  const res = await fetch('http://localhost:8080/auth/refresh', {
+  const res = await fetch(`${apiBase()}/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
   });
@@ -88,7 +90,7 @@ export const registerUser = async (data: {
   email: string
   password: string
 }) => {
-  const res = await fetch('http://localhost:8080/auth/register', {
+  const res = await fetch(`${apiBase()}/auth/register`, {
     method: 'POST',
     credentials: "include",
     headers: {
@@ -117,7 +119,7 @@ export const loginUser = async (data: {
   email: string
   password: string
 }) => {
-  const res = await fetch('http://localhost:8080/auth/authorization', {
+  const res = await fetch(`${apiBase()}/auth/authorization`, {
     method: 'POST',
     credentials: "include",
     headers: {
@@ -143,7 +145,7 @@ export const loginUser = async (data: {
 }
 
 export const fetchMe = async () => {
-  return secureFetch('http://localhost:8080/auth/me')
+  return secureFetch(`${apiBase()}/auth/me`)
     .then((res) => {
       if (!res.ok) return null;
       return res.json();

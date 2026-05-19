@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/settings")
-@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
 public class UserSettingsController {
 
     private final UserSettingsService userSettingsService;

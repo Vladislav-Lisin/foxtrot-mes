@@ -18,7 +18,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/chats")
-@CrossOrigin(origins = "http://localhost:3000", allowCredentials = "true")
 public class ChatsController {
     private final ChatService chatService;
 

@@ -1,38 +1,49 @@
 import { apiBase } from "./apiBase";
+import type { User } from "~/composables/userState";
 
-// Флаг для предотвращения бесконечного цикла refresh запросов
 let isRefreshing = false;
 
-/**
- * Обновляет access token используя refresh token
- */
-export const refreshAccessToken = async () => {
-  const res = await fetch(`${apiBase()}/auth/refresh`, {
-    method: 'POST',
-    credentials: 'include',
-  });
+type AuthApiResponse = {
+  user?: User
+  accessToken?: string
+  token?: string
+  refreshToken?: string
+};
 
-  if (!res.ok) {
-    // Если refresh не прошел, очищаем данные
-    const { clearAuth } = useUserState();
+export const refreshAccessToken = async () => {
+  const { clearAuth, refreshToken, setRefreshToken, setToken } = useUserState();
+
+  if (!refreshToken.value) {
     clearAuth();
     return null;
   }
 
-  const response = await res.json();
+  const refreshUrl = new URL(`${apiBase()}/auth/refresh`);
+  refreshUrl.searchParams.set("refreshToken", refreshToken.value);
+
+  const res = await fetch(refreshUrl.toString(), {
+    method: "POST",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    clearAuth();
+    return null;
+  }
+
+  const response = await res.json() as AuthApiResponse;
 
   if (response.accessToken) {
-    const { setToken } = useUserState();
     setToken(response.accessToken);
+  }
+
+  if (response.refreshToken) {
+    setRefreshToken(response.refreshToken);
   }
 
   return response.accessToken || null;
 };
 
-/**
- * Утилита для безопасных запросов с автоматическим добавлением токена.
- * При 401 автоматически пытается обновить токен и повторяет запрос.
- */
 export const secureFetch = async (
   url: string,
   options: RequestInit = {}
@@ -40,43 +51,39 @@ export const secureFetch = async (
   const { token } = useUserState();
   const headers = new Headers(options.headers || {});
 
-  // Добавляем токен если он есть
   if (token.value) {
-    headers.set('Authorization', `Bearer ${token.value}`);
+    headers.set("Authorization", `Bearer ${token.value}`);
   }
 
-  // Убедимся что Content-Type установлен если есть body
-  if (options.body && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
+  if (options.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
   }
 
   let response = await fetch(url, {
     ...options,
-    credentials: 'include',
+    credentials: "include",
     headers,
   });
 
-  // Если получили 401 или заголовок X-Token-Expired, пытаемся обновить токен
-  if (response.status === 401 || response.headers.get('X-Token-Expired') === 'true') {
-    if (isRefreshing) return response; // avoid infinite loop
+  if (response.status === 401 || response.headers.get("X-Token-Expired") === "true") {
+    if (isRefreshing) return response;
     isRefreshing = true;
 
     const newToken = await refreshAccessToken();
 
     isRefreshing = false;
 
-    // Если удалось обновить токен, повторяем запрос
     if (newToken) {
       const retryHeaders = new Headers(options.headers || {});
-      retryHeaders.set('Authorization', `Bearer ${newToken}`);
+      retryHeaders.set("Authorization", `Bearer ${newToken}`);
 
-      if (options.body && !retryHeaders.has('Content-Type')) {
-        retryHeaders.set('Content-Type', 'application/json');
+      if (options.body && !retryHeaders.has("Content-Type")) {
+        retryHeaders.set("Content-Type", "application/json");
       }
 
       response = await fetch(url, {
         ...options,
-        credentials: 'include',
+        credentials: "include",
         headers: retryHeaders,
       });
     }
@@ -91,58 +98,58 @@ export const registerUser = async (data: {
   password: string
 }) => {
   const res = await fetch(`${apiBase()}/auth/register`, {
-    method: 'POST',
+    method: "POST",
     credentials: "include",
     headers: {
-      'Content-Type': 'application/json'
+      "Content-Type": "application/json"
     },
     body: JSON.stringify(data)
-  })
+  });
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(text)
+    const text = await res.text();
+    throw new Error(text);
   }
 
-  const response = await res.json()
+  const response = await res.json() as AuthApiResponse;
 
-  // Сохраняем токен если он есть в ответе
   if (response.accessToken || response.token) {
-    const { setToken } = useUserState();
-    setToken(response.accessToken || response.token);
+    const { setRefreshToken, setToken } = useUserState();
+    setToken(response.accessToken || response.token || null);
+    setRefreshToken(response.refreshToken ?? null);
   }
 
-  return response
-}
+  return response;
+};
 
 export const loginUser = async (data: {
   email: string
   password: string
 }) => {
   const res = await fetch(`${apiBase()}/auth/authorization`, {
-    method: 'POST',
+    method: "POST",
     credentials: "include",
     headers: {
-      'Content-Type': 'application/json'
+      "Content-Type": "application/json"
     },
     body: JSON.stringify(data)
-  })
+  });
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(text)
+    const text = await res.text();
+    throw new Error(text);
   }
 
-  const response = await res.json()
+  const response = await res.json() as AuthApiResponse;
 
-  // Сохраняем токен если он есть в ответе
   if (response.accessToken || response.token) {
-    const { setToken } = useUserState();
-    setToken(response.accessToken || response.token);
+    const { setRefreshToken, setToken } = useUserState();
+    setToken(response.accessToken || response.token || null);
+    setRefreshToken(response.refreshToken ?? null);
   }
 
-  return response
-}
+  return response;
+};
 
 export const fetchMe = async () => {
   return secureFetch(`${apiBase()}/auth/me`)
@@ -153,24 +160,21 @@ export const fetchMe = async () => {
     .catch(() => null);
 };
 
-/**
- * Проактивный рефреш токена
- */
 export const proactiveRefreshToken = async () => {
   const { token, tokenCreatedAt } = useUserState();
   if (!token.value || !tokenCreatedAt.value) return;
 
   const now = Date.now();
   const elapsed = now - tokenCreatedAt.value;
-  const ttlMs = 15 * 60 * 1000; // 15 минут
-  const refreshThreshold = 13 * 60 * 1000; // 13 минут
+  const ttlMs = 15 * 60 * 1000;
+  const refreshThreshold = 13 * 60 * 1000;
 
   if (elapsed >= refreshThreshold && elapsed < ttlMs) {
     try {
       await refreshAccessToken();
-      console.log('Token refreshed proactively');
+      console.log("Token refreshed proactively");
     } catch (error) {
-      console.error('Failed to refresh token proactively:', error);
+      console.error("Failed to refresh token proactively:", error);
     }
   }
 };

@@ -1,7 +1,7 @@
 import { fetchMe, proactiveRefreshToken } from "~/api/auth";
 
 export default defineNuxtPlugin(async () => {
-  const { setUser, clearUser, isAuthReady, loadToken, setToken, token } = useUserState();
+  const { setUser, clearAuth, isAuthReady, loadToken, token } = useUserState();
 
   // Восстанавливаем токен из localStorage
   loadToken();
@@ -12,12 +12,10 @@ export default defineNuxtPlugin(async () => {
     if (me) {
       setUser(me);
     } else {
-      clearUser();
-      setToken(null);
+      clearAuth();
     }
   } catch {
-    clearUser();
-    setToken(null);
+    clearAuth();
   } finally {
     // 👇 ВАЖНО: говорим "проверка завершена"
     isAuthReady.value = true;

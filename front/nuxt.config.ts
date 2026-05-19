@@ -1,7 +1,7 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  modules: ["@nuxt/eslint", "@nuxt/ui", "@pinia/nuxt", "@nuxt/image"],
 
+  modules: ["@nuxt/eslint", "@nuxt/ui", "@pinia/nuxt", "@nuxt/image"],
   devtools: {
     enabled: true,
   },
@@ -18,6 +18,12 @@ export default defineNuxtConfig({
   },
   css: ["~/assets/css/main.css"],
 
+  runtimeConfig: {
+    public: {
+      apiBase: "https://foxtrot-backend-4s11.onrender.com",
+    },
+  },
+
   routeRules: {
     "/": { prerender: true },
   },
@@ -27,18 +33,6 @@ export default defineNuxtConfig({
   nitro: {
     preset: "node-server",
   },
-
-  runtimeConfig: {
-    public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE || "https://foxtrot-backend-4s11.onrender.com",
-    },
-  },
-
-  server: {
-    host: "0.0.0.0",
-    port: 3000,
-  },
-
   eslint: {
     config: {
       stylistic: {

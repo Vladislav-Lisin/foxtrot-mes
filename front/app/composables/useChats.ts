@@ -1,4 +1,5 @@
 import type { StompSubscription } from "@stomp/stompjs"
+import { apiBase } from "~/api/apiBase"
 import { createPrivateChat, findChatByTag, getAllChatsPreview, getChatHistory } from "~/api/chats"
 import type {
   ChatFinderResponse,
@@ -185,6 +186,7 @@ export const useChats = () => {
     const socket = useChatSocket()
     await socket.ensureConnected({
       accessToken: token.value,
+      baseHttpUrl: apiBase(),
       handlers: {
         onConnectedChange: v => (isWsConnected.value = v),
         onPreview: (dto) => {

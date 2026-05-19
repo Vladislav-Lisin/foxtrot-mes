@@ -1,9 +1,11 @@
 <script setup lang="ts">
 const messageText = ref("");
 const scrollEl = ref<HTMLElement | null>(null);
+
 defineProps<{
   showSidebarToggle?: boolean
 }>();
+
 defineEmits<{
   openSidebar: []
 }>();
@@ -65,7 +67,7 @@ watch(
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex h-full flex-col">
     <UCard variant="outline" class="w-full rounded-none">
       <template #header>
         <div class="flex items-center gap-3">
@@ -78,7 +80,7 @@ watch(
             class="md:hidden"
             @click="$emit('openSidebar')"
           />
-          <div v-if="selectedChat" class="flex gap-3 items-center min-w-0">
+          <div v-if="selectedChat" class="flex min-w-0 items-center gap-3">
             <UUser
               :name="selectedChat.username"
               :description="selectedChat.userTag"
@@ -89,20 +91,16 @@ watch(
               size="xl"
             />
           </div>
-          <div v-else class="text-sm text-gray-400">
-            Выберите чат
-          </div>
         </div>
       </template>
     </UCard>
-    <div ref="scrollEl" class="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-2 bg-[#0b1220] min-w-0">
-      <div v-if="!selectedChat" class="text-gray-400">
-        Выберите чат в списке слева
-      </div>
+
+    <div ref="scrollEl" class="min-w-0 flex-1 space-y-2 overflow-y-auto overflow-x-hidden bg-[#0b1220] p-4">
+      <div v-if="!selectedChat" />
       <div v-else-if="!currentMessages.length" class="text-gray-400">
         здесь пока нет сообщений
       </div>
-      <div v-else class="space-y-2 min-w-0">
+      <div v-else class="min-w-0 space-y-2">
         <div
           v-for="msg in currentMessages"
           :key="msg.id || `${msg.chatId}-${msg.timestamp}`"
@@ -116,11 +114,11 @@ watch(
               : 'rounded-bl-md border-gray-700 bg-[#111a2e]'"
           >
             <div
-              class="whitespace-pre-wrap text-sm leading-snug text-gray-100 break-words break-all [overflow-wrap:anywhere]"
+              class="whitespace-pre-wrap break-all break-words text-sm leading-snug text-gray-100 [overflow-wrap:anywhere]"
             >
               {{ msg.content }}
             </div>
-            <div class="mt-2 flex items-center gap-2 justify-end text-[11px] text-gray-400">
+            <div class="mt-2 flex items-center justify-end gap-2 text-[11px] text-gray-400">
               <span>{{ formatTime(msg.timestamp) }}</span>
               <UBadge
                 v-if="isMine(msg.senderId)"
@@ -137,7 +135,7 @@ watch(
 
     <form
       v-if="selectedChat"
-      class="p-3 border-t border-gray-700 flex items-center gap-2"
+      class="flex items-center gap-2 border-t border-gray-700 p-3"
       @submit.prevent="submitMessage"
     >
       <UInput
@@ -155,15 +153,5 @@ watch(
         :disabled="!messageText.trim()"
       />
     </form>
-
-    <UButton
-      v-if="showSidebarToggle && !selectedChat"
-      color="warning"
-      variant="soft"
-      icon="i-lucide-users"
-      label="Чаты"
-      class="absolute left-4 top-20 z-10 md:hidden"
-      @click="$emit('openSidebar')"
-    />
   </div>
 </template>

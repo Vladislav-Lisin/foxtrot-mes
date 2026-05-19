@@ -4,6 +4,14 @@ import CommunityCreationForm from "../communities/CommunityCreationForm.vue";
 
 const { filteredChats, activeFilter, selectChat } = useChats();
 const isCreateCommunity = ref(false);
+const emit = defineEmits<{
+  chatSelected: []
+}>();
+
+const handleSelectChat = async (chat: (typeof filteredChats.value)[number]) => {
+  await selectChat(chat);
+  emit("chatSelected");
+};
 </script>
 
 <template>
@@ -32,6 +40,6 @@ const isCreateCommunity = ref(false);
     :username="chat.username"
     :last-message="chat.lastMessage"
     :last-status="chat.lastOutgoingStatus ?? undefined"
-    @select="selectChat(chat)"
+    @select="handleSelectChat(chat)"
   />
 </template>

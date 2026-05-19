@@ -1,6 +1,12 @@
 <script setup lang="ts">
 const messageText = ref("");
 const scrollEl = ref<HTMLElement | null>(null);
+defineProps<{
+  showSidebarToggle?: boolean
+}>();
+defineEmits<{
+  openSidebar: []
+}>();
 
 const {
   selectedChat,
@@ -62,16 +68,30 @@ watch(
   <div class="flex flex-col h-full">
     <UCard variant="outline" class="w-full rounded-none">
       <template #header>
-        <div v-if="selectedChat" class="flex gap-3 items-center">
-          <UUser
-            :name="selectedChat.username"
-            :description="selectedChat.userTag"
-            :avatar="{
-              src: selectedChat.avatar || '/ava.jpg'
-            }"
-            chip
-            size="xl"
+        <div class="flex items-center gap-3">
+          <UButton
+            v-if="showSidebarToggle"
+            color="warning"
+            variant="ghost"
+            icon="i-lucide-panel-left-open"
+            aria-label="Открыть список чатов"
+            class="md:hidden"
+            @click="$emit('openSidebar')"
           />
+          <div v-if="selectedChat" class="flex gap-3 items-center min-w-0">
+            <UUser
+              :name="selectedChat.username"
+              :description="selectedChat.userTag"
+              :avatar="{
+                src: selectedChat.avatar || '/ava.jpg'
+              }"
+              chip
+              size="xl"
+            />
+          </div>
+          <div v-else class="text-sm text-gray-400">
+            Выберите чат
+          </div>
         </div>
       </template>
     </UCard>
@@ -135,5 +155,15 @@ watch(
         :disabled="!messageText.trim()"
       />
     </form>
+
+    <UButton
+      v-if="showSidebarToggle && !selectedChat"
+      color="warning"
+      variant="soft"
+      icon="i-lucide-users"
+      label="Чаты"
+      class="absolute left-4 top-20 z-10 md:hidden"
+      @click="$emit('openSidebar')"
+    />
   </div>
 </template>

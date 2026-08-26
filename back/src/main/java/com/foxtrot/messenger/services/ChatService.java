@@ -127,7 +127,7 @@ public class ChatService {
             Optional<Message> lastMessageOpt = chatMessageRepository.findById(chat.getLastMessageId());
             String lastMessageText = lastMessageOpt
                     .map(Message::getContent)
-                    .map(content -> content == null ? "" : new String(content))
+                    .map(content -> content == null ? "" : new String(content, StandardCharsets.UTF_8))
                     .filter(text -> !text.isBlank())
                     .orElse("здесь пока ничего нет");
             chatFinderResponse.setLastMessage(lastMessageText);
@@ -187,7 +187,7 @@ public class ChatService {
         if (chat.getLastMessageId() != null) {
             String lastMessageText = chatMessageRepository.findById(chat.getLastMessageId())
                     .map(Message::getContent)
-                    .map(content -> content == null ? "" : new String(content))
+                    .map(content -> content == null ? "" : new String(content, StandardCharsets.UTF_8))
                     .filter(text -> !text.isBlank())
                     .orElse("здесь пока ничего нет");
             resp.setLastMessage(lastMessageText);
@@ -221,7 +221,7 @@ public class ChatService {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         User user = (User)authentication.getPrincipal();
         List<Chats> chatsList = getAllUserChats();
-        chatsList.sort(Comparator.comparing(Chats::getLastMessageAt).reversed());
+        chatsList.sort(Comparator.comparing(Chats::getLastMessageAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
         List<ChatPreviewDTO> previewDTOList = new ArrayList<>();
         for (Chats chat : chatsList) {
             previewDTOList.add(buildChatPreviewForUser(chat.getId(), user.getId()));

@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 
-import java.util.Date;
+import java.time.Instant;
 
 
 @Data
@@ -24,7 +24,7 @@ public class ChatMessage {
 
     private String content;
 
-    private Date timestamp;
+    private Instant timestamp;
 
     private MessageStatus status;
 }

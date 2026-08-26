@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,6 +25,6 @@ public interface ChatMemberRepository extends JpaRepository<ChatMember, UUID> {
             cm.lastMessageAt = :createdAt
         where cm.chatId = :chatId
     """)
-    void updateLastMessage(UUID chatId, UUID messageId, LocalDateTime createdAt);
+    void updateLastMessage(UUID chatId, UUID messageId, Instant createdAt);
 
 }

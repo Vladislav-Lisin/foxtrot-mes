@@ -8,7 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -23,13 +23,13 @@ public class Chats {
     private ChatType type;
 
     @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "last_message_id")
     private UUID lastMessageId;
 
     @Column(name = "last_message_at")
-    private LocalDateTime lastMessageAt;
+    private Instant lastMessageAt;
 
     public UUID getId() {
         return id;
@@ -43,11 +43,11 @@ public class Chats {
         this.type = type;
     }
 
-    public LocalDateTime getCreatedAt() {
+    public Instant getCreatedAt() {
         return createdAt;
     }
 
-    public void setCreatedAt(LocalDateTime createdAt) {
+    public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
     }
 
@@ -59,11 +59,11 @@ public class Chats {
         this.lastMessageId = lastMessageId;
     }
 
-    public LocalDateTime getLastMessageAt() {
+    public Instant getLastMessageAt() {
         return lastMessageAt;
     }
 
-    public void setLastMessageAt(LocalDateTime lastMessageAt) {
+    public void setLastMessageAt(Instant lastMessageAt) {
         this.lastMessageAt = lastMessageAt;
     }
 }

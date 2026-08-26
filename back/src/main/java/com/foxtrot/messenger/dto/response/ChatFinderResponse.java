@@ -4,7 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Data
 @AllArgsConstructor
@@ -15,6 +15,6 @@ public class ChatFinderResponse {
     private UserResponse partner;
     private Boolean alreadyExists;
     private String lastMessage;
-    private LocalDateTime lastMessageAt;
+    private Instant lastMessageAt;
 
 }

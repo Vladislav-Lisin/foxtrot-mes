@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessagingException;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
@@ -99,12 +100,13 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                 return MessageBuilder.createMessage(message.getPayload(), accessor.getMessageHeaders());
 
             } catch (ExpiredJwtException e) {
-                logger.warn("WebSocket: Token expired - client should refresh and reconnect. Error: {}", e.getMessage());
-                // For expired token, return message allowing connection to continue
-                // The client will handle the error and perform token refresh
-                // Add a warning header that client can check
-                accessor.setNativeHeader("X-Token-Expired", "true");
-                return message;
+                logger.warn("WebSocket: Token expired on CONNECT - rejecting so client can refresh and reconnect. Error: {}", e.getMessage());
+                // Мутация заголовков accessor'а здесь не долетает до клиента (см. комментарий выше
+                // про пересборку Message для успешного пути) — единственный способ реально сообщить
+                // клиенту об истёкшем токене - явно провалить CONNECT. Spring при этом отправит
+                // клиенту STOMP ERROR-фрейм, а фронтенд (onStompError) уже проверяет текст
+                // "token expired" в теле фрейма и делает refresh + переподключение.
+                throw new MessagingException("Authentication failed: token expired");
             } catch (Exception e) {
                 logger.error("WebSocket authentication error: {}", e.getMessage(), e);
                 // For other auth errors, allow connection but unauthenticated

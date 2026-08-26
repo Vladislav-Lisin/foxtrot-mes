@@ -26,7 +26,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.*;
 
 import static com.foxtrot.messenger.entity.ChatType.PRIVATE;
@@ -153,7 +153,7 @@ public class ChatService {
 
         // создаем новый чат
         Chats chat = new Chats();
-        chat.setCreatedAt(LocalDateTime.now());
+        chat.setCreatedAt(Instant.now());
         chat.setType(PRIVATE);
         chatsRepository.save(chat);
 
@@ -248,8 +248,8 @@ public class ChatService {
         Message entity = new Message();
         entity.setChatId(chatId);
         entity.setSenderId(userId);
-        entity.setContent(request.getContent().getBytes());
-        entity.setCreatedAt(LocalDateTime.now());
+        entity.setContent(request.getContent().getBytes(StandardCharsets.UTF_8));
+        entity.setCreatedAt(Instant.now());
         entity.setStatus("SENT");
         entity.setIsDeleted(false);
 
@@ -268,13 +268,14 @@ public class ChatService {
         chat.setLastMessageAt(saved.getCreatedAt());
         chatsRepository.save(chat);
 
-        // возвращаем DTO
+        // возвращаем DTO (используем именно сохранённое время, чтобы REST-история и live-пуш
+        // по WebSocket показывали один и тот же timestamp для одного и того же сообщения)
         return ChatMessage.builder()
                 .id(saved.getId().toString())
                 .chatId(saved.getChatId().toString())
                 .senderId(saved.getSenderId().toString())
                 .content(request.getContent())
-                .timestamp(new Date())
+                .timestamp(saved.getCreatedAt())
                 .status(MessageStatus.SENT)
                 .build();
     }
@@ -310,7 +311,7 @@ public class ChatService {
         if (chat.getLastMessageId() != null) {
             lastMessageText = chatMessageRepository.findById(chat.getLastMessageId())
                     .map(Message::getContent)
-                    .map(content -> content == null ? "" : new String(content))
+                    .map(content -> content == null ? "" : new String(content, StandardCharsets.UTF_8))
                     .filter(text -> !text.isBlank())
                     .orElse("здесь пока ничего нет");
         }

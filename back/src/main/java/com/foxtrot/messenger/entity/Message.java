@@ -1,7 +1,7 @@
 package com.foxtrot.messenger.entity;
 
 import jakarta.persistence.*;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -22,7 +22,7 @@ public class Message {
     private byte[] content;
 
     @Column(name = "created_at", nullable = false)
-    private LocalDateTime createdAt;
+    private Instant createdAt;
 
     @Column(name = "status")
     private String status;
@@ -43,8 +43,8 @@ public class Message {
     public byte[] getContent() { return content; }
     public void setContent(byte[] content) { this.content = content; }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
-    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }

@@ -17,7 +17,7 @@ import org.springframework.stereotype.Controller;
 import java.security.Principal;
 import org.springframework.security.core.Authentication;
 
-import java.util.Date;
+import java.time.Instant;
 import java.util.UUID;
 
 @Controller
@@ -97,7 +97,7 @@ public class ChatWebSocketController {
                     .chatId(message.getChatId())
                     .senderId(message.getSenderId())
                     .content(message.getContent())
-                    .timestamp(new Date())
+                    .timestamp(Instant.now())
                     .status(MessageStatus.DELIVERED)
                     .build();
 
@@ -151,7 +151,7 @@ public class ChatWebSocketController {
                         ChatMessage.builder()
                                 .chatId(chatId.toString())
                                 .status(MessageStatus.READ)
-                                .timestamp(new Date())
+                                .timestamp(Instant.now())
                                 .build()
                 );
             }

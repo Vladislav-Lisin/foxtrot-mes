@@ -1,0 +1,67 @@
+import { secureFetch } from "./auth";
+import { apiBase } from "./apiBase";
+import type { ChatFinderResponse, ChatPreviewDTO, GetChatHistoryResponse } from "~/types/chat";
+
+export const findChatByTag = async (tag: string) => {
+  const response = await secureFetch(`${apiBase()}/chats/finder`, {
+    method: "POST",
+    body: JSON.stringify({ tag }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Не удалось найти чат по тегу");
+  }
+
+  const dto = (await response.json()) as {
+    chatId: string | null
+    partner: ChatFinderResponse["partner"]
+    alreadyExists: boolean
+    lastMessage: string | null
+    lastMessageAt: string | null
+  };
+
+  return dto as ChatFinderResponse;
+};
+
+export const createPrivateChat = async (partnerId: string) => {
+  const response = await secureFetch(`${apiBase()}/chats/create-private`, {
+    method: "POST",
+    body: JSON.stringify({ partnerId }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Не удалось создать приватный чат");
+  }
+
+  return (await response.json()) as ChatFinderResponse;
+};
+
+export const getAllChatsPreview = async () => {
+  const response = await secureFetch(`${apiBase()}/chats/all-chats-preview`, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Не удалось загрузить список чатов");
+  }
+
+  const result = await response.json() as { allChats: ChatPreviewDTO[] };
+  return result.allChats;
+};
+
+export const getChatHistory = async (chatId: string, page = 0, size = 30) => {
+  const url = `${apiBase()}/chats/${chatId}/history?page=${page}&size=${size}`;
+  const response = await secureFetch(url, {
+    method: "GET",
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "Не удалось загрузить историю чата");
+  }
+
+  return (await response.json()) as GetChatHistoryResponse;
+};

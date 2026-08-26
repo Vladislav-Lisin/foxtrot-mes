@@ -160,19 +160,34 @@ export const fetchMe = async () => {
     .catch(() => null);
 };
 
+// Reads the `exp` claim out of the JWT payload without verifying the
+// signature — only used client-side to decide when to proactively refresh.
+const decodeJwtExpMs = (token: string): number | null => {
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+};
+
 export const proactiveRefreshToken = async () => {
-  const { token, tokenCreatedAt } = useUserState();
-  if (!token.value || !tokenCreatedAt.value) return;
+  const { token } = useUserState();
+  if (!token.value) return;
 
-  const now = Date.now();
-  const elapsed = now - tokenCreatedAt.value;
-  const ttlMs = 15 * 60 * 1000;
-  const refreshThreshold = 13 * 60 * 1000;
+  const expiresAtMs = decodeJwtExpMs(token.value);
+  if (!expiresAtMs) return;
 
-  if (elapsed >= refreshThreshold && elapsed < ttlMs) {
+  // Must exceed the polling interval in auth-init.client.ts (5 min) so a
+  // token nearing expiry is never skipped between two poll ticks.
+  const remainingMs = expiresAtMs - Date.now();
+  const refreshWindowMs = 10 * 60 * 1000;
+
+  if (remainingMs > 0 && remainingMs <= refreshWindowMs) {
     try {
       await refreshAccessToken();
-      console.log("Token refreshed proactively");
     } catch (error) {
       console.error("Failed to refresh token proactively:", error);
     }

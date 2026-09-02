@@ -7,6 +7,8 @@ import com.foxtrot.messenger.dto.response.UserResponse;
 import com.foxtrot.messenger.dto.mapping.UserMapper;
 import com.foxtrot.messenger.entity.User;
 import com.foxtrot.messenger.entity.Role;
+import com.foxtrot.messenger.exception.custom.EntityAlreadyExistsException;
+import com.foxtrot.messenger.exception.custom.InvalidCredentialsException;
 import com.foxtrot.messenger.repository.UserRepository;
 import com.foxtrot.messenger.repository.RoleRepository;
 import com.foxtrot.messenger.security.RefreshTokenService;
@@ -44,12 +46,14 @@ public class AuthService implements IAuthService {
     @Override
     public AuthResponse login(AuthRequest request) {
 
-        if (!userRepository.findByEmail(request.getEmail()).isPresent()) {
-            throw new RuntimeException("There is no account with this email address");
-        }
-        User user = userRepository.findByEmail(request.getEmail()).get();
+        // Одно и то же сообщение для "нет такого email" и "неверный пароль" -
+        // иначе ответ сервера позволяет перебором узнавать, какие email вообще
+        // зарегистрированы.
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new InvalidCredentialsException("Неверный email или пароль."));
+
         if (!encoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new RuntimeException("Invalid password.");
+            throw new InvalidCredentialsException("Неверный email или пароль.");
         }
         user.setLastSeen(LocalDateTime.now());
         String token = jwtService.generateToken(user.getEmail()); // создаём JWT
@@ -67,16 +71,18 @@ public class AuthService implements IAuthService {
     public AuthResponse register(RegisterRequest request) {
 
         if (userRepository.findByEmail(request.email).isPresent()) {
-            throw new RuntimeException("Email already exists");
+            throw new EntityAlreadyExistsException("Пользователь с таким email уже зарегистрирован.");
         }
 
         if (userRepository.findByUsername(request.username).isPresent()) {
-            throw new RuntimeException("Username already exists");
+            throw new EntityAlreadyExistsException("Это имя пользователя уже занято.");
         }
 
         User user = new User();
+        // Отсутствие роли USER - не ошибка клиента, а не выполненная миграция/сид
+        // данных на сервере, поэтому не бизнес-исключение, а инвариант (упадёт в 500).
         Role userRole = roleRepository.findByName("USER")
-                .orElseThrow(() -> new RuntimeException("Role USER not found"));
+                .orElseThrow(() -> new IllegalStateException("Role USER not found"));
 
         user.setUsername(request.username);
         user.setEmail(request.email);

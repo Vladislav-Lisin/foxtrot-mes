@@ -8,6 +8,7 @@ import com.foxtrot.messenger.model.MessageStatus;
 import com.foxtrot.messenger.repository.ChatMemberRepository;
 import com.foxtrot.messenger.services.ChatService;
 
+import com.foxtrot.messenger.security.UserPrincipal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -55,13 +56,11 @@ public class ChatWebSocketController {
             }
 
             Authentication authentication = (Authentication) principal;
-            UUID userId;
-            try {
-                userId = UUID.fromString(authentication.getName());
-            } catch (IllegalArgumentException e) {
-                logger.warn("WebSocket: Invalid user ID format: {}", authentication.getName(), e);
+            if (!(authentication.getPrincipal() instanceof UserPrincipal userPrincipal)) {
+                logger.warn("WebSocket: Unexpected principal type: {}", authentication.getPrincipal());
                 return;
             }
+            UUID userId = userPrincipal.getId();
 
             ChatMessage message = chatService.processMessage(request, userId);
 
@@ -125,13 +124,11 @@ public class ChatWebSocketController {
             }
 
             Authentication authentication = (Authentication) principal;
-            UUID userId;
-            try {
-                userId = UUID.fromString(authentication.getName());
-            } catch (IllegalArgumentException e) {
-                logger.warn("WebSocket: Invalid user ID format in readMessage: {}", authentication.getName(), e);
+            if (!(authentication.getPrincipal() instanceof UserPrincipal userPrincipal)) {
+                logger.warn("WebSocket: Unexpected principal type in readMessage: {}", authentication.getPrincipal());
                 return;
             }
+            UUID userId = userPrincipal.getId();
 
             UUID chatId = UUID.fromString(request.getChatId());
 

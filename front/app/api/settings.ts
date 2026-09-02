@@ -1,5 +1,6 @@
 import { secureFetch } from "./auth";
 import { apiBase } from "./apiBase";
+import { extractErrorMessage } from "./apiError";
 
 export const updateUserSettings = async (data: {
   username: string
@@ -11,8 +12,7 @@ export const updateUserSettings = async (data: {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Не удалось обновить настройки пользователя");
+    throw new Error(await extractErrorMessage(response, "Не удалось обновить настройки пользователя"));
   }
 
   return response.json() as Promise<{

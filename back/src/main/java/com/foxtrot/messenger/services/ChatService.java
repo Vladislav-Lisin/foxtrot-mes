@@ -13,12 +13,12 @@ import com.foxtrot.messenger.entity.Chats;
 import com.foxtrot.messenger.entity.Message;
 import com.foxtrot.messenger.entity.User;
 import com.foxtrot.messenger.exception.custom.EntityAlreadyExistsException;
+import com.foxtrot.messenger.exception.custom.EntityNotFoundException;
 import com.foxtrot.messenger.model.ChatMessage;
 import com.foxtrot.messenger.model.MessageStatus;
 import com.foxtrot.messenger.repository.*;
 
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -57,16 +57,12 @@ public class ChatService {
 
 
 
-    public GetChatHistoryResponse getChatHistory(UUID chatId, int page, int size){
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        User sender = (User) authentication.getPrincipal();
-        UUID senderId = sender.getId();
-
+    public GetChatHistoryResponse getChatHistory(UUID chatId, int page, int size, UUID senderId){
         chatsRepository.findById(chatId)
-                .orElseThrow(() -> new RuntimeException("Chat not found"));
+                .orElseThrow(() -> new EntityNotFoundException("Chat not found: " + chatId));
 
         if (!chatMemberRepository.existsByChatIdAndUserId(chatId, senderId)) {
-            throw new RuntimeException("Access denied to this chat");
+            throw new AccessDeniedException("Access denied to this chat");
         }
 
         PageRequest pageable = PageRequest.of(
@@ -97,14 +93,10 @@ public class ChatService {
 
 
     // поиск чата по тегу пользователя
-    public ChatFinderResponse findChatByTag(ChatFinderRequest request){
+    public ChatFinderResponse findChatByTag(ChatFinderRequest request, UUID senderId){
         User targetUser = userRepository.findByTag(request.getTag())
-                .orElseThrow(() -> new IllegalArgumentException("This tag does not exist."));
+                .orElseThrow(() -> new EntityNotFoundException("This tag does not exist."));
 
-        // получение Id отправителя и искомого пользователя
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        User sender = (User) authentication.getPrincipal();
-        UUID senderId = sender.getId();
         UUID targetId = targetUser.getId();
 
         ChatFinderResponse chatFinderResponse = new ChatFinderResponse();
@@ -170,18 +162,19 @@ public class ChatService {
         }
 
         User partner = userRepository.findById(partnerId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + partnerId));
+                .orElseThrow(() -> new EntityNotFoundException("User not found: " + partnerId));
 
-        UUID chatId = chatsRepository.findDirectChatBetweenUsers(senderId, partnerId)
-                .map(Chats::getId)
+        Optional<Chats> existingChat = chatsRepository.findDirectChatBetweenUsers(senderId, partnerId);
+        boolean alreadyExisted = existingChat.isPresent();
+        UUID chatId = existingChat.map(Chats::getId)
                 .orElseGet(() -> createPrivateChat(senderId, partnerId));
 
         Chats chat = chatsRepository.findById(chatId)
-                .orElseThrow(() -> new IllegalArgumentException("Chat not found: " + chatId));
+                .orElseThrow(() -> new EntityNotFoundException("Chat not found: " + chatId));
 
         ChatFinderResponse resp = new ChatFinderResponse();
         resp.setChatId(chat.getId().toString());
-        resp.setAlreadyExists(true);
+        resp.setAlreadyExists(alreadyExisted);
         resp.setPartner(userMapper.toDto(partner));
 
         if (chat.getLastMessageId() != null) {
@@ -210,21 +203,17 @@ public class ChatService {
     }
 
     // Получение всех чатов пользователя по его Id
-    private List<Chats> getAllUserChats(){
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        User user = (User)authentication.getPrincipal();
-        return chatsRepository.findAllByMemberUserId(user.getId());
+    private List<Chats> getAllUserChats(UUID userId){
+        return chatsRepository.findAllByMemberUserId(userId);
     }
 
     // Получение превью для всех чатов пользователя
-    public List<ChatPreviewDTO> getAllUsersChatsPreview(){
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        User user = (User)authentication.getPrincipal();
-        List<Chats> chatsList = getAllUserChats();
+    public List<ChatPreviewDTO> getAllUsersChatsPreview(UUID userId){
+        List<Chats> chatsList = getAllUserChats(userId);
         chatsList.sort(Comparator.comparing(Chats::getLastMessageAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
         List<ChatPreviewDTO> previewDTOList = new ArrayList<>();
         for (Chats chat : chatsList) {
-            previewDTOList.add(buildChatPreviewForUser(chat.getId(), user.getId()));
+            previewDTOList.add(buildChatPreviewForUser(chat.getId(), userId));
         }
         return previewDTOList;
     }
@@ -242,7 +231,7 @@ public class ChatService {
         }
 
         Chats chat = chatsRepository.findById(chatId)
-                .orElseThrow(() -> new IllegalArgumentException("Chat not found: " + chatId));
+                .orElseThrow(() -> new EntityNotFoundException("Chat not found: " + chatId));
 
         // сохраняем
         Message entity = new Message();
@@ -292,20 +281,20 @@ public class ChatService {
     // Получение данных для получения превью конкретного чата.
     public ChatPreviewDTO buildChatPreviewForUser(UUID chatId, UUID viewerId) {
         if (!chatMemberRepository.existsByChatIdAndUserId(chatId, viewerId)) {
-            throw new IllegalArgumentException("User is not a member of chat: " + chatId);
+            throw new AccessDeniedException("User is not a member of chat: " + chatId);
         }
 
         Chats chat = chatsRepository.findById(chatId)
-                .orElseThrow(() -> new IllegalArgumentException("Chat not found: " + chatId));
+                .orElseThrow(() -> new EntityNotFoundException("Chat not found: " + chatId));
 
         UUID partnerId = chatMemberRepository.findByChatId(chatId).stream()
                 .map(ChatMember::getUserId)
                 .filter(id -> !id.equals(viewerId))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Partner not found for chat: " + chatId));
+                .orElseThrow(() -> new EntityNotFoundException("Partner not found for chat: " + chatId));
 
         User partner = userRepository.findById(partnerId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + partnerId));
+                .orElseThrow(() -> new EntityNotFoundException("User not found: " + partnerId));
 
         String lastMessageText = "здесь пока ничего нет";
         if (chat.getLastMessageId() != null) {

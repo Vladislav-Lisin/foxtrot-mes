@@ -1,17 +1,17 @@
 package com.foxtrot.messenger.controllers;
 
 
-
 import com.foxtrot.messenger.dto.request.ChatFinderRequest;
 import com.foxtrot.messenger.dto.request.CreatePrivateChatRequest;
 import com.foxtrot.messenger.dto.response.ChatFinderResponse;
 import com.foxtrot.messenger.dto.response.GetAllUserChatsPreviewResponse;
 import com.foxtrot.messenger.dto.response.GetChatHistoryResponse;
-import com.foxtrot.messenger.entity.User;
+import com.foxtrot.messenger.security.UserPrincipal;
 import com.foxtrot.messenger.services.ChatService;
-import jakarta.servlet.http.HttpSession;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -26,31 +26,31 @@ public class ChatsController {
     }
 
     @PostMapping("/finder")
-    public ChatFinderResponse findChatByTag(@RequestBody ChatFinderRequest request, HttpSession session){
-        return chatService.findChatByTag(request);
+    public ResponseEntity<ChatFinderResponse> findChatByTag(@Valid @RequestBody ChatFinderRequest request,
+                                                              @AuthenticationPrincipal UserPrincipal principal){
+        return ResponseEntity.ok(chatService.findChatByTag(request, principal.getId()));
     }
 
     @PostMapping("/create-private")
-    public ChatFinderResponse createPrivateChat(@RequestBody CreatePrivateChatRequest request){
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        UUID senderId = ((User)authentication.getPrincipal()).getId();
+    public ResponseEntity<ChatFinderResponse> createPrivateChat(@Valid @RequestBody CreatePrivateChatRequest request,
+                                                                  @AuthenticationPrincipal UserPrincipal principal){
         UUID partnerId = UUID.fromString(request.getPartnerId());
-        return chatService.createOrGetPrivateChatPreview(senderId, partnerId);
+        ChatFinderResponse response = chatService.createOrGetPrivateChatPreview(principal.getId(), partnerId);
+        HttpStatus status = Boolean.TRUE.equals(response.getAlreadyExists()) ? HttpStatus.OK : HttpStatus.CREATED;
+        return ResponseEntity.status(status).body(response);
     }
 
     @GetMapping("/{chatId}/history")
-    public GetChatHistoryResponse getChatHistory(@PathVariable UUID chatId,
+    public ResponseEntity<GetChatHistoryResponse> getChatHistory(@PathVariable UUID chatId,
                                                  @RequestParam int page,
-                                                 @RequestParam int size){
-        return chatService.getChatHistory(chatId, page, size);
+                                                 @RequestParam int size,
+                                                 @AuthenticationPrincipal UserPrincipal principal){
+        return ResponseEntity.ok(chatService.getChatHistory(chatId, page, size, principal.getId()));
     }
 
     @GetMapping("/all-chats-preview")
-    public GetAllUserChatsPreviewResponse getAllUserChatsPreview(){
-        return new GetAllUserChatsPreviewResponse(chatService.getAllUsersChatsPreview());
+    public ResponseEntity<GetAllUserChatsPreviewResponse> getAllUserChatsPreview(@AuthenticationPrincipal UserPrincipal principal){
+        return ResponseEntity.ok(new GetAllUserChatsPreviewResponse(chatService.getAllUsersChatsPreview(principal.getId())));
     }
-
-
-
 
 }

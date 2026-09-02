@@ -1,4 +1,5 @@
 import { apiBase } from "./apiBase";
+import { extractErrorMessage } from "./apiError";
 import type { User } from "~/composables/userState";
 
 let isRefreshing = false;
@@ -107,8 +108,7 @@ export const registerUser = async (data: {
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text);
+    throw new Error(await extractErrorMessage(res, "Не удалось зарегистрироваться"));
   }
 
   const response = await res.json() as AuthApiResponse;
@@ -136,8 +136,7 @@ export const loginUser = async (data: {
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text);
+    throw new Error(await extractErrorMessage(res, "Не удалось войти"));
   }
 
   const response = await res.json() as AuthApiResponse;

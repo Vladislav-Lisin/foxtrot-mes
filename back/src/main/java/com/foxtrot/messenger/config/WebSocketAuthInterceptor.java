@@ -1,6 +1,7 @@
 package com.foxtrot.messenger.config;
 
 import com.foxtrot.messenger.security.JwtService;
+import com.foxtrot.messenger.security.UserPrincipal;
 import com.foxtrot.messenger.repository.UserRepository;
 import io.jsonwebtoken.ExpiredJwtException;
 import org.slf4j.Logger;
@@ -88,7 +89,7 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
                 UsernamePasswordAuthenticationToken auth =
                         new UsernamePasswordAuthenticationToken(
-                                user.getId().toString(),
+                                new UserPrincipal(user),
                                 null,
                                 authorities
                         );

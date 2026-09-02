@@ -2,6 +2,7 @@ package com.foxtrot.messenger.security;
 
 import com.foxtrot.messenger.entity.RefreshToken;
 import com.foxtrot.messenger.entity.User;
+import com.foxtrot.messenger.exception.custom.InvalidTokenException;
 import com.foxtrot.messenger.repository.RefreshTokenRepository;
 import org.springframework.stereotype.Service;
 
@@ -31,11 +32,11 @@ public class RefreshTokenService {
     public RefreshToken validate(String tokenStr) {
 
         RefreshToken token = repository.findByToken(tokenStr)
-                .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
+                .orElseThrow(() -> new InvalidTokenException("Недействительный refresh-токен."));
 
         if (token.getExpiryDate().before(new Date(System.currentTimeMillis()))) {
             repository.delete(token);
-            throw new RuntimeException("Refresh token expired");
+            throw new InvalidTokenException("Срок действия refresh-токена истёк.");
         }
 
         return token;

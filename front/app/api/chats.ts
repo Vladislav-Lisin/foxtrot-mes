@@ -1,5 +1,6 @@
 import { secureFetch } from "./auth";
 import { apiBase } from "./apiBase";
+import { extractErrorMessage } from "./apiError";
 import type { ChatFinderResponse, ChatPreviewDTO, GetChatHistoryResponse } from "~/types/chat";
 
 export const findChatByTag = async (tag: string) => {
@@ -9,8 +10,7 @@ export const findChatByTag = async (tag: string) => {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Не удалось найти чат по тегу");
+    throw new Error(await extractErrorMessage(response, "Не удалось найти чат по тегу"));
   }
 
   const dto = (await response.json()) as {
@@ -31,8 +31,7 @@ export const createPrivateChat = async (partnerId: string) => {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Не удалось создать приватный чат");
+    throw new Error(await extractErrorMessage(response, "Не удалось создать приватный чат"));
   }
 
   return (await response.json()) as ChatFinderResponse;
@@ -44,8 +43,7 @@ export const getAllChatsPreview = async () => {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Не удалось загрузить список чатов");
+    throw new Error(await extractErrorMessage(response, "Не удалось загрузить список чатов"));
   }
 
   const result = await response.json() as { allChats: ChatPreviewDTO[] };
@@ -59,8 +57,7 @@ export const getChatHistory = async (chatId: string, page = 0, size = 30) => {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || "Не удалось загрузить историю чата");
+    throw new Error(await extractErrorMessage(response, "Не удалось загрузить историю чата"));
   }
 
   return (await response.json()) as GetChatHistoryResponse;

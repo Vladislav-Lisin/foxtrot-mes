@@ -8,7 +8,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     ports:
-      - "5432:5432"
+      # 5432 на хосте уже занят локальным systemd-сервисом postgresql - наружу торчит 5433,
+      # backend внутри compose-сети всё равно ходит на postgres:5432, это не задевает.
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,22 +26,180 @@ services:
       dockerfile: Dockerfile
     container_name: foxtrot-backend
     restart: unless-stopped
+    # Тоже network_mode: host - см. подробный комментарий у media-service ниже. Изначально
+    # тут была попытка достучаться до host-networked media-service через host.docker.internal/
+    # шлюз bridge-сети (172.18.0.1) - оба варианта зависали намертво (connection timed out),
+    # хотя ufw был выключен ("Firewall not enabled") и дело было не в нём - похоже, докеровский
+    # iptables/FORWARD-чейн просто не пропускает трафик от bridge-контейнера к процессу,
+    # слушающему напрямую на хосте. host-networking для backend тоже полностью убирает эту
+    # прослойку - localhost внутри контейнера теперь и есть настоящий localhost хоста.
+    network_mode: host
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-foxtrot}
+      # postgres по-прежнему на обычной bridge-сети и публикует 5433 на хосте (см. "ports:"
+      # у postgres) - при network_mode: host backend видит этот порт как свой localhost.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5433/${POSTGRES_DB:-foxtrot}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO:-update}
       SPRING_JPA_SHOW_SQL: ${SPRING_JPA_SHOW_SQL:-true}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-86400000}
+      CALL_JWT_SECRET: ${CALL_JWT_SECRET:?set CALL_JWT_SECRET in .env}
+      CALL_JWT_EXPIRATION: ${CALL_JWT_EXPIRATION:-60000}
+      # media-service тоже на network_mode: host - тот же localhost.
+      MEDIA_SERVICE_BASE_URL: http://localhost:4000
+      # А это то, что уходит в браузер (CallResponse.mediaServiceUrl) - должен быть
+      # реально достижим с клиента, localhost:4000 работает только при локальном docker-compose
+      MEDIA_SERVICE_PUBLIC_URL: ${MEDIA_SERVICE_PUBLIC_URL:-http://localhost:4000}
+      MEDIA_SERVICE_INTERNAL_SECRET: ${MEDIA_SERVICE_INTERNAL_SECRET:?set MEDIA_SERVICE_INTERNAL_SECRET in .env}
       APP_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS: ${APP_WEBSOCKET_ALLOWED_ORIGIN_PATTERNS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173}
       APP_CORS_ALLOWED_ORIGIN_PATTERNS: ${APP_CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173}
       PORT: 8080
-    ports:
-      - "8080:8080"
+      # Сервер маленький (1 CPU / ~1.8 ГБ RAM) - JVM по умолчанию может отъесть больше,
+      # чем реально нужно приложению такого размера, не оставляя памяти Postgres/
+      # media-service/фронту. JAVA_TOOL_OPTIONS - стандартная переменная, которую java
+      # подхватывает сама, без правки Dockerfile/ENTRYPOINT.
+      JAVA_TOOL_OPTIONS: "-Xmx400m -XX:MaxMetaspaceSize=128m"
     depends_on:
       postgres:
         condition: service_healthy
+      media-service:
+        condition: service_started
+
+  media-service:
+    build:
+      context: ../media-service
+      dockerfile: Dockerfile
+    container_name: foxtrot-media-service
+    restart: unless-stopped
+    # ВАЖНО: раньше это был обычный сервис с "ports:" (Docker NAT/port-publishing) и
+    # MEDIASOUP_ANNOUNCED_IP=127.0.0.1 - на практике это не заработало. WebRTC-браузер слал
+    # ICE-кандидату 127.0.0.1:400xx STUN-запросы, но iceState навсегда оставался "new":
+    # проброс loopback-адреса через Docker NAT/hairpin для UDP на пользовательской (не
+    # дефолтной) bridge-сети требует sysctl net.ipv4.conf.<bridge>.route_localnet=1,
+    # который Docker не всегда включает сам. network_mode: host убирает Docker NAT из
+    # уравнения полностью - тот же приём уже применён ниже для coturn/nginx по той же
+    # причине (широкий диапазон портов + WebRTC не дружит с обычным Docker-проброс).
+    network_mode: host
+    environment:
+      PORT: 4000
+      CALL_JWT_SECRET: ${CALL_JWT_SECRET:?set CALL_JWT_SECRET in .env}
+      MEDIA_SERVICE_INTERNAL_SECRET: ${MEDIA_SERVICE_INTERNAL_SECRET:?set MEDIA_SERVICE_INTERNAL_SECRET in .env}
+      # localhost, а не "backend" - с network_mode: host своего DNS-имени в compose-сети нет,
+      # только реальный хост. backend публикует 8080 на хосте (см. "ports:" у backend).
+      SPRING_BOOT_INTERNAL_URL: http://localhost:8080
+      # Узкий диапазон для локальной разработки - см. комментарий у продового диапазона ниже.
+      MEDIASOUP_RTC_MIN_PORT: 40000
+      MEDIASOUP_RTC_MAX_PORT: 40010
+      # НЕ 127.0.0.1 - см. подробный комментарий в back/.env.example. Firefox (и не только)
+      # не собирает loopback как СВОЙ локальный ICE-кандидат, у него это реальный LAN IP -
+      # пара "реальный IP (браузер) <-> 127.0.0.1 (сервер)" физически невалидна, ICE всегда
+      # проваливается, при этом сигнализация (produce/connect-transport) остаётся "ok" и
+      # маскирует проблему. Нужен реальный IP машины (см. `ip route`/`hostname -I`), даже
+      # если браузер и media-service - буквально один и тот же хост.
+      MEDIASOUP_ANNOUNCED_IP: ${MEDIASOUP_ANNOUNCED_IP:?set MEDIASOUP_ANNOUNCED_IP in .env - see comment above}
+      # Оба пустые по умолчанию - TURN тогда просто отключён (см. media-service/.env.example).
+      # Для прода включите сервис coturn ниже (профиль "turn") и укажите те же значения там.
+      TURN_HOST: ${TURN_HOST:-}
+      TURN_SECRET: ${TURN_SECRET:-}
+    # Полный продовый диапазон - 40000-49999 (см. Foxtrot Calls - Roadmap §6.6/§7) - с
+    # network_mode: host просто расширьте MEDIASOUP_RTC_MIN/MAX_PORT, никаких "ports:" не
+    # нужно вообще - процесс сам слушает нужные порты прямо на хосте.
+
+  frontend:
+    build:
+      context: ../front
+      dockerfile: Dockerfile
+      target: runner
+    container_name: foxtrot-frontend
+    restart: unless-stopped
+    # Тот же network_mode: host, что и у остальных - nginx (профиль proxy) ожидает найти
+    # его на 127.0.0.1:3000 (см. nginx.conf), плюс так проще всего: не нужно тащить свой
+    # docker-compose.yml из front/ отдельным проектом.
+    network_mode: host
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      # Тот же домен, что и у сайта целиком - nginx проксирует /auth|chats|settings|calls
+      # на backend в рамках ОДНОГО origin, отдельный CORS-запрос на другой хост не нужен.
+      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:?set NUXT_PUBLIC_API_BASE in .env (https://ваш-домен)}
+
+  # Опционален - только для прода/реальной сети, требует TURN_SECRET в .env.
+  # Запуск: docker compose --profile turn up (обычный "docker compose up" его не поднимает,
+  # чтобы локальная разработка без коturn не спотыкалась о обязательный TURN_SECRET).
+  coturn:
+    image: coturn/coturn:4.6-alpine
+    container_name: foxtrot-coturn
+    restart: unless-stopped
+    profiles: ["turn"]
+    # Та же причина, что у media-service выше: TURN-релею нужен широкий диапазон портов,
+    # через обычный "ports:" это непрактично - с host-networking процесс слушает прямо
+    # на портах хоста, без прослойки Docker NAT.
+    network_mode: host
+    environment:
+      # Специально без ":?required" здесь - Compose подставляет переменные ДО фильтрации
+      # по профилям, так что "обязательная" переменная у неактивного по умолчанию сервиса
+      # ломает даже обычный "docker compose up" без --profile turn. Проверка "не забыли
+      # ли задать" сделана ниже, в самой команде - она сработает только когда контейнер
+      # реально запускается, то есть только при активном профиле turn.
+      TURN_SECRET: ${TURN_SECRET:-}
+      TURN_REALM: ${TURN_REALM:-foxtrot.local}
+      # Тот же публичный IP, что уходит в клиентские iceServers (см. turnCredentials.ts) -
+      # нужен coturn'у, чтобы понять, какой из СВОИХ адресов реально публичный.
+      TURN_HOST: ${TURN_HOST:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -z "$$TURN_SECRET" ]; then
+          echo "TURN_SECRET is not set - add it to back/.env before using --profile turn" >&2
+          exit 1
+        fi
+        # network_mode: host означает, что coturn видит ВСЕ интерфейсы хоста разом - не
+        # только настоящий публичный IP, но и внутренние docker-мосты (172.17.0.1,
+        # 172.18.0.1 и т.п., см. "relay ... initialization" в логах контейнера). Без явного
+        # --external-ip/--relay-ip coturn может согласовать relay-кандидата на одном из ЭТИХ
+        # адресов - до него снаружи никто не достучится, и TURN-путь молча не работает
+        # (при этом сигнализация/ICE-состояние на сервере всё равно бодро репортует "connected",
+        # маскируя проблему - подключение просто не может быть проверено обратно с реального
+        # клиента). Явно закрепляем единственный настоящий публичный адрес.
+        EXTRA_ARGS=""
+        if [ -n "$$TURN_HOST" ]; then
+          EXTRA_ARGS="--external-ip=$$TURN_HOST --relay-ip=$$TURN_HOST --listening-ip=$$TURN_HOST"
+        fi
+        exec turnserver -n --log-file=stdout \
+          --listening-port=3478 --tls-listening-port=5349 \
+          --min-port=49152 --max-port=49999 \
+          --use-auth-secret --static-auth-secret="$$TURN_SECRET" \
+          --realm="$$TURN_REALM" --no-cli $$EXTRA_ARGS
+
+  # Опционален - единая точка входа 443 с TLS для реальной сети (без него backend/media-service/
+  # frontend торчат отдельными портами без HTTPS - браузер не даст доступ к камере/микрофону).
+  # Запуск: docker compose --profile proxy up. Предполагает, что backend (8080),
+  # media-service (4000) и фронт (3000, свой отдельный docker-compose в front/) уже
+  # опубликовали порты на хосте - host-networking видит их все через 127.0.0.1, по той же
+  # причине, что и у media-service/coturn выше.
+  nginx:
+    build:
+      context: ../nginx
+      dockerfile: Dockerfile
+    container_name: foxtrot-nginx
+    restart: unless-stopped
+    profiles: ["proxy"]
+    network_mode: host
+    volumes:
+      # Host-bind, а не именованный volume - сюда кладутся настоящие Let's Encrypt
+      # сертификаты (certbot certonly --standalone), не автосгенерированный self-signed
+      # (см. 50-self-signed-cert.sh - он используется только если fullchain.pem ещё нет,
+      # то есть локально/до первого certbot run).
+      - ${NGINX_CERTS_DIR:-./certs}:/etc/nginx/certs
+    depends_on:
+      backend:
+        condition: service_started
+      media-service:
+        condition: service_started
+      frontend:
+        condition: service_started
 
 volumes:
   postgres_data:

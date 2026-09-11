@@ -2,8 +2,11 @@
 const { activeFilter, searchTag, searchChat } = useChats();
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
+// "@тег" - точный поиск по бэкенду среди всех пользователей платформы (см. searchChat).
+// Без "@" - обычное имя, ищем только среди уже существующих чатов - это чисто локальный
+// фильтр (см. filteredChats в useChats.ts), к бэкенду вообще не обращаемся.
 const trySearchOnEnter = () => {
-  if (!searchTag.value.trim()) return;
+  if (!searchTag.value.trim().startsWith("@")) return;
   if (searchTimeout) {
     clearTimeout(searchTimeout);
     searchTimeout = null;
@@ -13,7 +16,7 @@ const trySearchOnEnter = () => {
 
 watch(searchTag, (value) => {
   if (searchTimeout) clearTimeout(searchTimeout);
-  if (!value.trim()) {
+  if (!value.trim().startsWith("@")) {
     searchTimeout = null;
     return;
   }
@@ -30,7 +33,7 @@ watch(searchTag, (value) => {
     size="md"
     variant="outline"
     v-model="searchTag"
-    placeholder="Поиск по тегу (можно с @)"
+    placeholder="Поиск по имени, @тег - по всем пользователям"
     @keyup.enter="trySearchOnEnter()"
   />
   <UFieldGroup orientation="horizontal">

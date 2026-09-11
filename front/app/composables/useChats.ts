@@ -23,6 +23,9 @@ export type ChatPreviewUI = {
   /** Статус последнего сообщения текущего пользователя (из WS / локально при отправке) */
   lastOutgoingStatus?: MessageStatus | null
   alreadyExists: boolean
+  unreadCount: number
+  /** Кто прислал lastMessage - для "Вы: ..." в списке чатов у отправителя */
+  lastMessageSenderId?: string | null
 }
 
 function normalizeTagForRequest(tag: string) {
@@ -78,6 +81,8 @@ function dtoToPreview(dto: ChatPreviewDTO): ChatPreviewUI {
     lastMessageAt: dto.lastMessageAt ?? null,
     lastOutgoingStatus: status,
     alreadyExists: true,
+    unreadCount: dto.unreadCount ?? 0,
+    lastMessageSenderId: dto.lastMessageSenderId ?? null,
   }
 }
 
@@ -92,6 +97,8 @@ function finderToPreview(dto: ChatFinderResponse): ChatPreviewUI {
     lastMessage: dto.alreadyExists ? (dto.lastMessage ?? "") : "здесь пока нет сообщений",
     lastMessageAt: dto.lastMessageAt ?? null,
     alreadyExists: dto.alreadyExists,
+    unreadCount: 0,
+    lastMessageSenderId: null,
   }
 }
 
@@ -135,9 +142,22 @@ export const useChats = () => {
   const chatTopicSub = useState<StompSubscription | null>("chatTopicSub", () => null)
 
   const filteredChats = computed(() => {
-    const list = chatPreviews.value
-    if (activeFilter.value === "all") return list
-    return list.filter(c => c.type === activeFilter.value)
+    let list = chatPreviews.value
+    if (activeFilter.value !== "all") {
+      list = list.filter(c => c.type === activeFilter.value)
+    }
+
+    // Поиск по @тегу - отдельный сценарий (см. searchChat): точный запрос к бэкенду среди
+    // ВСЕХ пользователей платформы, для старта чата с новым человеком - подменяет
+    // chatPreviews целиком, сюда не попадает. Без "@" - обычное имя, ищем только среди уже
+    // существующих чатов, локально и мгновенно, без похода на бэкенд.
+    const query = searchTag.value.trim()
+    if (query && !query.startsWith("@")) {
+      const needle = query.toLowerCase()
+      list = list.filter(c => c.username.toLowerCase().includes(needle))
+    }
+
+    return list
   })
 
   const currentMessages = computed(() => {
@@ -240,6 +260,9 @@ export const useChats = () => {
             }
           }
         },
+        onCallNotification: (notification) => {
+          useCall().handleIncomingCallNotification(notification)
+        },
         onTokenExpired: async () => {
           // Token was refreshed, reconnect WebSocket
           await connectWsIfNeeded()
@@ -279,7 +302,13 @@ export const useChats = () => {
     watch(
       () => canonicalUserId(user.value?.id),
       async (id, prevId) => {
-        if (!id && !prevId) return
+        // prevId пустой значит либо "оба раза не залогинены" (нечего сбрасывать), либо
+        // САМОЕ ПЕРВОЕ появление user.value в этой сессии - a это не переключение аккаунта,
+        // а обычный логин. token.value заполняется синхронно из localStorage ДО того, как
+        // user.value придёт из fetchMe() (см. auth-init.client.ts) - токен-вотчер ниже уже
+        // успевает загрузить previews к этому моменту, а старый guard (`!id && !prevId`)
+        // всё равно считал это "сменой аккаунта" и стирал их сразу после загрузки.
+        if (!prevId) return
         if (id !== prevId) {
           await resetChatUiForAccountSwitch()
           if (token.value) await connectWsIfNeeded()
@@ -499,6 +528,7 @@ export const useChats = () => {
         lastMessageAt: new Date().toISOString(),
         lastOutgoingStatus: "SENT",
         alreadyExists: true,
+        lastMessageSenderId: myId ?? null,
       })
     }
 
@@ -513,6 +543,14 @@ export const useChats = () => {
     const chatId = selectedChat.value?.chatId
     if (!import.meta.client) return
     if (!chatId) return
+
+    // Бэкенд шлёт READ-статус только остальным участникам (см. ChatWebSocketController.readMessage) -
+    // себе самому обновлённый preview не прилетает, поэтому счётчик обнуляем оптимистично тут же.
+    const preview = chatPreviews.value.find(p => p.chatId === chatId)
+    if (preview && preview.unreadCount > 0) {
+      chatPreviews.value = upsertPreview(chatPreviews.value, { ...preview, unreadCount: 0 })
+    }
+
     const socket = useChatSocket()
     await connectWsIfNeeded()
     await socket.waitUntilConnected()

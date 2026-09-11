@@ -296,20 +296,23 @@ public class ChatService {
         User partner = userRepository.findById(partnerId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found: " + partnerId));
 
+        Message lastMessage = chat.getLastMessageId() != null
+                ? chatMessageRepository.findById(chat.getLastMessageId()).orElse(null)
+                : null;
+
         String lastMessageText = "здесь пока ничего нет";
-        if (chat.getLastMessageId() != null) {
-            lastMessageText = chatMessageRepository.findById(chat.getLastMessageId())
-                    .map(Message::getContent)
-                    .map(content -> content == null ? "" : new String(content, StandardCharsets.UTF_8))
-                    .filter(text -> !text.isBlank())
-                    .orElse("здесь пока ничего нет");
+        if (lastMessage != null && lastMessage.getContent() != null) {
+            String content = new String(lastMessage.getContent(), StandardCharsets.UTF_8);
+            if (!content.isBlank()) lastMessageText = content;
         }
 
         return new ChatPreviewDTO(
                 chatId.toString(),
                 userMapper.toDto(partner),
                 lastMessageText,
-                chat.getLastMessageAt()
+                chat.getLastMessageAt(),
+                chatMessageRepository.countUnread(chatId, viewerId),
+                lastMessage != null ? lastMessage.getSenderId().toString() : null
         );
     }
 }

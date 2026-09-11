@@ -15,5 +15,7 @@ public class ChatPreviewDTO {
     private UserResponse partner;
     private String lastMessage;
     private Instant lastMessageAt;
+    private long unreadCount;
+    private String lastMessageSenderId;
 
 }

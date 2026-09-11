@@ -1,11 +1,13 @@
 import SockJS from "sockjs-client"
 import { Client, type IMessage, type StompSubscription } from "@stomp/stompjs"
 import type { ChatMessage, ChatPreviewDTO } from "~/types/chat"
+import type { CallNotification } from "~/types/call"
 import { refreshAccessToken } from "~/api/auth"
 
 type ChatSocketHandlers = {
   onPreview: (dto: ChatPreviewDTO) => void
   onPersonalStatus: (msg: ChatMessage) => void
+  onCallNotification?: (notification: CallNotification) => void
   onConnectedChange?: (connected: boolean) => void
   onTokenExpired?: () => void
 }
@@ -15,6 +17,7 @@ let connected = false
 let activeToken: string | null = null
 let previewsSub: StompSubscription | null = null
 let personalSub: StompSubscription | null = null
+let callsSub: StompSubscription | null = null
 let currentHandlers: ChatSocketHandlers | null = null
 
 function safeJson<T>(frame: IMessage): T | null {
@@ -33,6 +36,7 @@ export const useChatSocket = () => {
 
     previewsSub?.unsubscribe()
     personalSub?.unsubscribe()
+    callsSub?.unsubscribe()
 
     previewsSub = client.subscribe("/user/queue/chats", (frame) => {
       const dto = safeJson<ChatPreviewDTO>(frame)
@@ -42,6 +46,11 @@ export const useChatSocket = () => {
     personalSub = client.subscribe("/user/queue/messages", (frame) => {
       const msg = safeJson<ChatMessage>(frame)
       if (msg) handlers.onPersonalStatus(msg)
+    })
+
+    callsSub = client.subscribe("/user/queue/calls", (frame) => {
+      const notification = safeJson<CallNotification>(frame)
+      if (notification) handlers.onCallNotification?.(notification)
     })
   }
 
@@ -117,8 +126,10 @@ export const useChatSocket = () => {
   const disconnect = async () => {
     previewsSub?.unsubscribe()
     personalSub?.unsubscribe()
+    callsSub?.unsubscribe()
     previewsSub = null
     personalSub = null
+    callsSub = null
     connected = false
     activeToken = null
     if (client) {

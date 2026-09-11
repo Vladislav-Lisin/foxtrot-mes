@@ -31,5 +31,13 @@ public interface ChatMessageRepository extends JpaRepository<Message, UUID> {
 """)
     void markChatMessagesAsRead(UUID chatId, UUID userId);
 
+    @Query("""
+    select count(m) from Message m
+    where m.chatId = :chatId
+      and m.senderId <> :userId
+      and m.status <> 'READ'
+""")
+    long countUnread(UUID chatId, UUID userId);
+
     List<Message> findByChatIdOrderByCreatedAtDesc(UUID chatId);
 }

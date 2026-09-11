@@ -20,6 +20,8 @@ export type ChatPreviewDTO = {
   lastMessageAt: string | null
   status?: MessageStatus | null
   lastMessageStatus?: MessageStatus | null
+  unreadCount?: number
+  lastMessageSenderId?: string | null
 }
 
 export type MessageStatus = "SENT" | "DELIVERED" | "READ"

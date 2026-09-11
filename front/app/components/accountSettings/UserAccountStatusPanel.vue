@@ -3,10 +3,38 @@ import SettingsPanel from "./SettingsPanel.vue";
 
 const isSettingsOpen = ref(false);
 const { user } = useUserState();
+const { startStandaloneCall } = useCall();
+const toast = useToast();
+const startingCall = ref(false);
 
 defineProps({
   userID: String,
 });
+
+// Встреча без общего чата (как в Zoom) - joinExistingCall на /call/[callId]
+// принимает любой валидный callId, так что ссылка на комнату и есть "ссылка на конференцию".
+const startConference = async () => {
+  startingCall.value = true;
+  try {
+    const call = await startStandaloneCall();
+    const link = `${location.origin}/call/${call.callId}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.add({ title: "Конференция создана", description: "Ссылка скопирована в буфер обмена", color: "success" });
+    } catch {
+      toast.add({ title: "Конференция создана", description: link, color: "success" });
+    }
+    await navigateTo(`/call/${call.callId}`);
+  } catch (e) {
+    toast.add({
+      title: "Не удалось начать конференцию",
+      description: e instanceof Error ? e.message : String(e),
+      color: "error",
+    });
+  } finally {
+    startingCall.value = false;
+  }
+};
 </script>
 
 <template>
@@ -26,6 +54,16 @@ defineProps({
 
     <UButton
       class="mt-3 h-7 w-full justify-center"
+      variant="subtle"
+      color="primary"
+      icon="i-lucide-video"
+      label="Начать конференцию"
+      :loading="startingCall"
+      @click="startConference"
+    />
+
+    <UButton
+      class="mt-2 h-7 w-full justify-center"
       variant="subtle"
       color="warning"
       label="Настройки"

@@ -13,10 +13,70 @@ defineEmits<{
 const {
   selectedChat,
   currentMessages,
-  sendMessage
+  sendMessage,
+  markChatRead
 } = useChats();
 
 const { user } = useUserState();
+const { startChatCall, joinExistingCall, activeCall, activeCallByChat, checkActiveCallForChat } = useCall();
+
+const startingCall = ref(false);
+
+// Звонок этого чата уже идёт где-то (мы из него вышли, или его начал собеседник), но мы
+// сейчас в нём не находимся - показываем "переподключиться" вместо обычной "позвонить".
+const activeCallForChat = computed(() => {
+  const chatId = selectedChat.value?.chatId;
+  if (!chatId) return null;
+  const call = activeCallByChat.value[chatId];
+  if (!call || call.status === "ENDED") return null;
+  if (activeCall.value?.callId === call.callId) return null; // уже внутри - кнопка звонка не нужна вовсе, но UI и так на /call/[callId]
+  return call;
+});
+
+const callSelectedChat = async () => {
+  if (!selectedChat.value?.chatId || startingCall.value) return;
+  startingCall.value = true;
+  try {
+    const call = await startChatCall(selectedChat.value.chatId);
+    await navigateTo(`/call/${call.callId}`);
+  } catch (e) {
+    const toast = useToast();
+    toast.add({
+      title: "Не удалось начать звонок",
+      description: e instanceof Error ? e.message : String(e),
+      color: "error",
+    });
+  } finally {
+    startingCall.value = false;
+  }
+};
+
+const reconnectToCall = async () => {
+  const callId = activeCallForChat.value?.callId;
+  if (!callId || startingCall.value) return;
+  startingCall.value = true;
+  try {
+    await joinExistingCall(callId);
+    await navigateTo(`/call/${callId}`);
+  } catch (e) {
+    const toast = useToast();
+    toast.add({
+      title: "Не удалось переподключиться к звонку",
+      description: e instanceof Error ? e.message : String(e),
+      color: "error",
+    });
+  } finally {
+    startingCall.value = false;
+  }
+};
+
+watch(
+  () => selectedChat.value?.chatId,
+  (chatId) => {
+    if (chatId) void checkActiveCallForChat(chatId);
+  },
+  { immediate: true }
+);
 
 const normalizeId = (raw: unknown) =>
   typeof raw === "string"
@@ -55,14 +115,19 @@ watch(
   async () => {
     await nextTick();
     scrollEl.value?.scrollTo({ top: scrollEl.value.scrollHeight, behavior: "smooth" });
+    // Новое сообщение пришло, пока диалог уже открыт - собеседник его тут же видит,
+    // так что помечаем прочитанным сразу же, а не только при переключении чатов.
+    if (selectedChat.value?.chatId) void markChatRead();
   }
 );
 
 watch(
   () => selectedChat.value,
-  () => {
+  (chat) => {
     messageText.value = "";
-  }
+    if (chat?.chatId) void markChatRead();
+  },
+  { immediate: true }
 );
 </script>
 
@@ -80,7 +145,7 @@ watch(
             class="md:hidden"
             @click="$emit('openSidebar')"
           />
-          <div v-if="selectedChat" class="flex min-w-0 items-center gap-3">
+          <div v-if="selectedChat" class="flex min-w-0 flex-1 items-center justify-between gap-3">
             <UUser
               :name="selectedChat.username"
               :description="selectedChat.userTag"
@@ -89,6 +154,24 @@ watch(
               }"
               chip
               size="xl"
+            />
+            <UButton
+              v-if="selectedChat.chatId && activeCallForChat"
+              color="success"
+              variant="solid"
+              icon="i-lucide-phone-incoming"
+              label="Переподключиться"
+              :loading="startingCall"
+              @click="reconnectToCall"
+            />
+            <UButton
+              v-else-if="selectedChat.chatId"
+              color="warning"
+              variant="soft"
+              icon="i-lucide-phone"
+              aria-label="Позвонить"
+              :loading="startingCall"
+              @click="callSelectedChat"
             />
           </div>
         </div>

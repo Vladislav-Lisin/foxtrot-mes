@@ -84,7 +84,7 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
                     return message;
                 }
                 var authorities = List.of(
-                        new SimpleGrantedAuthority("ROLE_" + user.getRole().getName())
+                        new SimpleGrantedAuthority("ROLE_" + user.getPlatformRole().name())
                 );
 
                 UsernamePasswordAuthenticationToken auth =

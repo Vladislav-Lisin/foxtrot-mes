@@ -30,9 +30,17 @@ public class UserPrincipal implements UserDetails {
         return user.getId();
     }
 
+    // Не логин-имя пользователя, а стабильный идентификатор STOMP-принципала: Spring
+    // Security берёт именно getUsername() для Authentication.getName() (UserDetails
+    // проверяется раньше java.security.Principal), а весь код, шлющий персональные
+    // STOMP-уведомления (convertAndSendToUser в CallService/ChatWebSocketController),
+    // адресует их по userId.toString() - здесь должно быть то же самое, иначе брокер
+    // не находит сессию и сообщение тихо теряется. Настоящий логин - email - не нужен
+    // нигде в Principal-контракте, т.к. аутентификация идёт через кастомные JWT-фильтры,
+    // а не через UserDetailsService.
     @Override
     public String getUsername() {
-        return user.getEmail();
+        return user.getId().toString();
     }
 
     @Override
@@ -42,7 +50,7 @@ public class UserPrincipal implements UserDetails {
 
     @Override
     public List<GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().getName()));
+        return List.of(new SimpleGrantedAuthority("ROLE_" + user.getPlatformRole().name()));
     }
 
     @Override

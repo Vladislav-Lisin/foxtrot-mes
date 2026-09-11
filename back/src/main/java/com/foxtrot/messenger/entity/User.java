@@ -34,9 +34,17 @@ public class User {
     private LocalDateTime createdAt;
 
 
+    // Заготовка под роли внутри сообществ (владелец сообщества назначает участникам) -
+    // пока не используется для прав доступа на платформе, см. platformRole ниже.
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
+
+    // Платформенная роль (админка сайта). Источник прав доступа Spring Security -
+    // см. UserPrincipal.getAuthorities().
+    @Enumerated(EnumType.STRING)
+    @Column(name = "platform_role", nullable = false)
+    private UserRole platformRole = UserRole.USER;
 
     // getters/setters
 
@@ -105,5 +113,13 @@ public class User {
 
     public Role getRole() {
         return role;
+    }
+
+    public UserRole getPlatformRole() {
+        return platformRole;
+    }
+
+    public void setPlatformRole(UserRole platformRole) {
+        this.platformRole = platformRole;
     }
 }

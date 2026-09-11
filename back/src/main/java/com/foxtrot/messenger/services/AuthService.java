@@ -7,6 +7,7 @@ import com.foxtrot.messenger.dto.response.UserResponse;
 import com.foxtrot.messenger.dto.mapping.UserMapper;
 import com.foxtrot.messenger.entity.User;
 import com.foxtrot.messenger.entity.Role;
+import com.foxtrot.messenger.entity.UserRole;
 import com.foxtrot.messenger.exception.custom.EntityAlreadyExistsException;
 import com.foxtrot.messenger.exception.custom.InvalidCredentialsException;
 import com.foxtrot.messenger.repository.UserRepository;
@@ -86,7 +87,8 @@ public class AuthService implements IAuthService {
 
         user.setUsername(request.username);
         user.setEmail(request.email);
-        user.setRole(userRole);
+        user.setRole(userRole); // заготовка под роли сообществ - не участвует в правах доступа
+        user.setPlatformRole(UserRole.USER); // по умолчанию и так USER (см. поле в User), явно для наглядности
         user.setPasswordHash(encoder.encode(request.password));
 
         user.setTag(generateTag());

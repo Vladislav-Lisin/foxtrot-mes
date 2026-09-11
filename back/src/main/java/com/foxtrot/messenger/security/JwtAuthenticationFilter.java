@@ -63,7 +63,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (jwtService.isTokenValid(token, user.getEmail())) {
 
                 var authorities = List.of(
-                        new SimpleGrantedAuthority("ROLE_" + user.getRole().getName())
+                        new SimpleGrantedAuthority("ROLE_" + user.getPlatformRole().name())
                 );
                 // создаём роли ТОЛЬКО после проверки пользователя
 

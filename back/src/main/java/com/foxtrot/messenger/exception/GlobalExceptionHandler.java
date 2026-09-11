@@ -4,6 +4,7 @@ import com.foxtrot.messenger.exception.custom.EntityAlreadyExistsException;
 import com.foxtrot.messenger.exception.custom.EntityNotFoundException;
 import com.foxtrot.messenger.exception.custom.InvalidCredentialsException;
 import com.foxtrot.messenger.exception.custom.InvalidTokenException;
+import com.foxtrot.messenger.exception.custom.TooManyRequestsException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -36,6 +37,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({InvalidCredentialsException.class, InvalidTokenException.class})
     public ResponseEntity<Map<String, Object>> handleUnauthorized(RuntimeException ex) {
         return build(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<Map<String, Object>> handleTooManyRequests(TooManyRequestsException ex) {
+        return build(HttpStatus.TOO_MANY_REQUESTS, ex.getMessage());
     }
 
     @ExceptionHandler(AccessDeniedException.class)

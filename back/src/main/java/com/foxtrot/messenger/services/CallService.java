@@ -36,6 +36,7 @@ public class CallService {
     private final MediaServiceClient mediaServiceClient;
     private final CallTokenService callTokenService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final CallRateLimiter rateLimiter;
     private final String mediaServiceUrl;
 
     public CallService(CallRepository callRepository,
@@ -44,6 +45,7 @@ public class CallService {
                         MediaServiceClient mediaServiceClient,
                         CallTokenService callTokenService,
                         SimpMessagingTemplate messagingTemplate,
+                        CallRateLimiter rateLimiter,
                         @Value("${media-service.public-url}") String mediaServiceUrl) {
         this.callRepository = callRepository;
         this.callParticipantRepository = callParticipantRepository;
@@ -51,6 +53,7 @@ public class CallService {
         this.mediaServiceClient = mediaServiceClient;
         this.callTokenService = callTokenService;
         this.messagingTemplate = messagingTemplate;
+        this.rateLimiter = rateLimiter;
         this.mediaServiceUrl = mediaServiceUrl;
     }
 
@@ -84,6 +87,8 @@ public class CallService {
     }
 
     private Call createCallRecord(UUID ownerId, UUID chatId, CallStatus initialStatus) {
+        rateLimiter.checkStartAllowed(ownerId);
+
         Call call = new Call();
         call.setOwnerId(ownerId);
         call.setChatId(chatId);
@@ -111,6 +116,17 @@ public class CallService {
         Call call = getActiveOrAnyCall(callId);
         assertCanJoin(call, userId);
         return toResponse(call, null); // без токена - его выдаём только на реальном join
+    }
+
+    // Для кнопки "переподключиться к звонку" в чате - вышел из звонка, но он ещё идёт,
+    // не нужно отдельного POST /calls (он упадёт EntityAlreadyExistsException).
+    public CallResponse getActiveCallForChat(UUID chatId, UUID userId) {
+        if (!chatMemberRepository.existsByChatIdAndUserId(chatId, userId)) {
+            throw new AccessDeniedException("Not a member of this chat: " + chatId);
+        }
+        return callRepository.findFirstByChatIdAndStatusIn(chatId, ACTIVE_STATUSES)
+                .map(call -> toResponse(call, null))
+                .orElse(null);
     }
 
     @Transactional
@@ -225,6 +241,17 @@ public class CallService {
     @Transactional
     public void onRoomEmpty(UUID callId) {
         callRepository.findById(callId).ifPresent(this::finishCall);
+    }
+
+    // group может быть null ("без группы") - исторический снимок в БД, не источник истины
+    // для живой маршрутизации звука (та в памяти media-service, см. Foxtrot Calls - Roadmap §6.4)
+    @Transactional
+    public void onGroupChanged(UUID callId, UUID userId, String group) {
+        callParticipantRepository.findByCallIdAndUserIdAndLeftAtIsNull(callId, userId)
+                .ifPresent(p -> {
+                    p.setGroupTag(group);
+                    callParticipantRepository.save(p);
+                });
     }
 
     // ---------- вспомогательное ----------

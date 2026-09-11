@@ -39,6 +39,13 @@ public class CallController {
         return ResponseEntity.ok(callService.getCall(callId, principal.getId()));
     }
 
+    @GetMapping("/active-by-chat/{chatId}")
+    public ResponseEntity<CallResponse> getActiveByChat(@PathVariable UUID chatId,
+                                                          @AuthenticationPrincipal UserPrincipal principal) {
+        CallResponse active = callService.getActiveCallForChat(chatId, principal.getId());
+        return active != null ? ResponseEntity.ok(active) : ResponseEntity.noContent().build();
+    }
+
     @PostMapping("/{callId}/join")
     public ResponseEntity<CallResponse> join(@PathVariable UUID callId,
                                                @AuthenticationPrincipal UserPrincipal principal) {

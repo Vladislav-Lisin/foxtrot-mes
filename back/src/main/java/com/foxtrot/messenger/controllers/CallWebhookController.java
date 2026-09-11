@@ -25,6 +25,7 @@ public class CallWebhookController {
             case "JOINED" -> callService.onParticipantJoined(callId, payload.getUserId());
             case "LEFT" -> callService.onParticipantLeft(callId, payload.getUserId());
             case "ROOM_EMPTY" -> callService.onRoomEmpty(callId);
+            case "GROUP_CHANGED" -> callService.onGroupChanged(callId, payload.getUserId(), payload.getGroup());
             default -> throw new IllegalArgumentException("Unknown call event type: " + payload.getType());
         }
         return ResponseEntity.noContent().build();

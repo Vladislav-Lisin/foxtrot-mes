@@ -2,9 +2,11 @@ package com.foxtrot.messenger.integration;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
 import java.util.UUID;
 
 /**
@@ -18,8 +20,26 @@ public class MediaServiceClient {
 
     private final RestClient restClient;
 
-    public MediaServiceClient(@Value("${media-service.base-url}") String baseUrl) {
-        this.restClient = RestClient.builder().baseUrl(baseUrl).build();
+    public MediaServiceClient(@Value("${media-service.base-url}") String baseUrl,
+                               @Value("${media-service.internal-secret}") String internalSecret) {
+        // JDK HttpClient по умолчанию пытается h2c upgrade (Connection: Upgrade,
+        // Upgrade: h2c) на первом запросе к новому хосту. media-service - это Node/Express
+        // с ws-сервером на том же HTTP-сервере (см. SignalingServer.attachSignalingServer) -
+        // ws перехватывает любой запрос с заголовком Upgrade и, увидев не-GET метод (наш POST),
+        // отвечает 405 "Invalid HTTP method" вместо того, чтобы запрос дошёл до Express-роута.
+        // Фиксируем HTTP/1.1, чтобы JDK не пыталась апгрейднуться.
+        HttpClient httpClient = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+
+        // Тот же секрет, что проверяет InternalServiceAuthFilter на входящих вебхуках -
+        // здесь мы сами клиент, отдаём его media-service на POST/DELETE /rooms
+        // (см. checkInternalSecret в media-service/src/http/roomsApi.ts).
+        this.restClient = RestClient.builder()
+                .baseUrl(baseUrl)
+                .requestFactory(new JdkClientHttpRequestFactory(httpClient))
+                .defaultHeader("X-Internal-Secret", internalSecret)
+                .build();
     }
 
     public String createRoom(UUID callId) {

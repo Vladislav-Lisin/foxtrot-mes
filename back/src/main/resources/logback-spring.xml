@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- Папка для файлов логов. Локально - ./logs, в докере - /app/logs (бинд-маунт на хост). -->
+    <property name="LOG_DIR" value="${LOG_DIR:-./logs}"/>
+
+    <!-- Консоль: ошибки красным, предупреждения жёлтым, всё остальное обычным цветом. -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%clr(%d{HH:mm:ss.SSS}){faint} %clr(%-5level) %clr(%logger{36}){cyan} - %msg%n%rEx</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Только ошибки - отдельный файл, его удобно открыть и сразу увидеть что сломалось. -->
+    <appender name="ERRORS" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>ERROR</level>
+        </filter>
+        <file>${LOG_DIR}/errors.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/errors.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %logger{36} - %msg%n%rEx</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Действия пользователей: вход, регистрация, сообщения, звонки, блокировки, аватарки... -->
+    <appender name="ACTIVITY" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/activity.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/activity.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss} %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Всё остальное приложение (INFO+) - техническая кухня, для разбора проблем. -->
+    <appender name="APP" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_DIR}/app.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_DIR}/app.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>10MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level %logger{36} - %msg%n%rEx</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Действия пользователей не дублируем в консоль - там и так шумно, смотреть их удобнее в activity.log. -->
+    <logger name="com.foxtrot.messenger.activity" level="INFO" additivity="false">
+        <appender-ref ref="ACTIVITY"/>
+        <appender-ref ref="ERRORS"/>
+    </logger>
+
+    <!-- Наш код: в консоль и в app.log. -->
+    <logger name="com.foxtrot.messenger" level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="APP"/>
+        <appender-ref ref="ERRORS"/>
+    </logger>
+
+    <!-- Шум библиотек: глушим. Hibernate SQL и Hikari "connection closed" - главные источники спама. -->
+    <logger name="org.hibernate.SQL" level="OFF"/>
+    <logger name="org.hibernate.orm.jdbc.bind" level="OFF"/>
+    <logger name="org.hibernate" level="WARN"/>
+    <logger name="com.zaxxer.hikari" level="ERROR"/>
+    <logger name="org.springframework" level="WARN"/>
+    <logger name="org.springframework.boot.autoconfigure.orm.jpa" level="ERROR"/>
+    <logger name="org.apache" level="WARN"/>
+    <logger name="org.postgresql" level="WARN"/>
+
+    <root level="WARN">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="APP"/>
+        <appender-ref ref="ERRORS"/>
+    </root>
+</configuration>

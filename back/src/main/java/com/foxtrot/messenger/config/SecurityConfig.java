@@ -11,6 +11,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
+
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
@@ -39,6 +40,9 @@ public class SecurityConfig {
             )
             .authorizeHttpRequests(auth -> auth
                     .requestMatchers("/auth/register", "/auth/authorization", "/auth/refresh").permitAll()
+                    // Загруженные картинки (фон чата) - статика, отдаётся браузеру напрямую,
+                    // без JWT в заголовке (как обычный <img src>/background-image).
+                    .requestMatchers("/uploads/**").permitAll()
                     // SockJS performs HTTP requests to /ws/** before STOMP CONNECT (no Authorization header yet).
                     // Actual auth happens in WebSocketAuthInterceptor on STOMP CONNECT with Bearer token.
                     .requestMatchers("/ws", "/ws/**").permitAll()

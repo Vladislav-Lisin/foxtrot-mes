@@ -1,5 +1,6 @@
 package com.foxtrot.messenger.services;
 
+import com.foxtrot.messenger.logging.Activity;
 import com.foxtrot.messenger.dto.request.AuthRequest;
 import com.foxtrot.messenger.dto.request.RegisterRequest;
 import com.foxtrot.messenger.dto.response.AuthResponse;
@@ -54,9 +55,12 @@ public class AuthService implements IAuthService {
                 .orElseThrow(() -> new InvalidCredentialsException("Неверный email или пароль."));
 
         if (!encoder.matches(request.getPassword(), user.getPasswordHash())) {
+            Activity.log("LOGIN_FAILED", "email", request.getEmail(), "reason", "bad_password");
             throw new InvalidCredentialsException("Неверный email или пароль.");
         }
+        Activity.log("LOGIN_OK", "user", user.getId());
         user.setLastSeen(LocalDateTime.now());
+        userRepository.save(user); // иначе lastSeen нигде не персистится - "в сети" никогда не было бы правдой
         String token = jwtService.generateToken(user.getEmail()); // создаём JWT
 
         String refreshToken = refreshTokenService.create(user).getToken();
@@ -98,6 +102,7 @@ public class AuthService implements IAuthService {
         user.setCreatedAt(LocalDateTime.now());
 
         userRepository.save(user);
+        Activity.log("REGISTER_OK", "user", user.getId(), "username", user.getUsername());
         String token = jwtService.generateToken(user.getEmail());
 
         String refreshToken = refreshTokenService.create(user).getToken();

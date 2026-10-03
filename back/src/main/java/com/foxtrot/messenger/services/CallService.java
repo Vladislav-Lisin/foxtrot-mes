@@ -1,5 +1,6 @@
 package com.foxtrot.messenger.services;
 
+import com.foxtrot.messenger.logging.Activity;
 import com.foxtrot.messenger.dto.response.CallResponse;
 import com.foxtrot.messenger.dto.ws.CallNotification;
 import com.foxtrot.messenger.entity.Call;
@@ -37,6 +38,7 @@ public class CallService {
     private final CallTokenService callTokenService;
     private final SimpMessagingTemplate messagingTemplate;
     private final CallRateLimiter rateLimiter;
+    private final BlockService blockService;
     private final String mediaServiceUrl;
 
     public CallService(CallRepository callRepository,
@@ -46,6 +48,7 @@ public class CallService {
                         CallTokenService callTokenService,
                         SimpMessagingTemplate messagingTemplate,
                         CallRateLimiter rateLimiter,
+                        BlockService blockService,
                         @Value("${media-service.public-url}") String mediaServiceUrl) {
         this.callRepository = callRepository;
         this.callParticipantRepository = callParticipantRepository;
@@ -54,6 +57,7 @@ public class CallService {
         this.callTokenService = callTokenService;
         this.messagingTemplate = messagingTemplate;
         this.rateLimiter = rateLimiter;
+        this.blockService = blockService;
         this.mediaServiceUrl = mediaServiceUrl;
     }
 
@@ -64,12 +68,14 @@ public class CallService {
         if (!chatMemberRepository.existsByChatIdAndUserId(chatId, ownerId)) {
             throw new AccessDeniedException("Not a member of this chat: " + chatId);
         }
+        assertNotBlockedInChat(chatId, ownerId);
         callRepository.findFirstByChatIdAndStatusIn(chatId, ACTIVE_STATUSES).ifPresent(existing -> {
             throw new EntityAlreadyExistsException("A call is already active in this chat");
         });
 
         Call call = createCallRecord(ownerId, chatId, CallStatus.RINGING);
         addParticipant(call.getId(), ownerId);
+        Activity.log("CALL_STARTED", "user", ownerId, "call", call.getId(), "chat", chatId);
         notifyChatMembers(call, call.getStatus());
 
         return toResponse(call, callTokenService.generate(ownerId, call.getId()));
@@ -82,6 +88,7 @@ public class CallService {
         // понадобится закрытая встреча - проверка приглашений добавляется в assertCanJoin.
         Call call = createCallRecord(ownerId, null, CallStatus.ACTIVE);
         addParticipant(call.getId(), ownerId);
+        Activity.log("CALL_STARTED", "user", ownerId, "call", call.getId(), "chat", "standalone");
 
         return toResponse(call, callTokenService.generate(ownerId, call.getId()));
     }
@@ -148,16 +155,33 @@ public class CallService {
         if (!callParticipantRepository.existsByCallIdAndUserIdAndLeftAtIsNull(callId, userId)) {
             addParticipant(callId, userId);
         }
+        Activity.log("CALL_JOINED", "user", userId, "call", callId);
 
         return toResponse(call, callTokenService.generate(userId, callId));
     }
 
     private void assertCanJoin(Call call, UUID userId) {
-        if (call.getChatId() != null && !chatMemberRepository.existsByChatIdAndUserId(call.getChatId(), userId)) {
-            throw new AccessDeniedException("Not a member of this chat: " + call.getChatId());
+        if (call.getChatId() != null) {
+            if (!chatMemberRepository.existsByChatIdAndUserId(call.getChatId(), userId)) {
+                throw new AccessDeniedException("Not a member of this chat: " + call.getChatId());
+            }
+            assertNotBlockedInChat(call.getChatId(), userId);
         }
         // standalone (chatId == null): открытая модель v1, дополнительной проверки нет -
         // см. комментарий в startStandaloneCall.
+    }
+
+    // Чат 1:1 - значит у звонящего/входящего ровно один собеседник в этом чате.
+    // Заблокированные друг другом не могут ни начать, ни присоединиться к звонку этого чата.
+    private void assertNotBlockedInChat(UUID chatId, UUID userId) {
+        UUID partnerId = chatMemberRepository.findByChatId(chatId).stream()
+                .map(ChatMember::getUserId)
+                .filter(id -> !id.equals(userId))
+                .findFirst()
+                .orElse(null);
+        if (partnerId != null && blockService.isBlocked(userId, partnerId)) {
+            throw new AccessDeniedException("Call blocked between these users");
+        }
     }
 
     private Call getActiveOrAnyCall(UUID callId) {
@@ -174,6 +198,7 @@ public class CallService {
                     p.setLeftAt(Instant.now());
                     callParticipantRepository.save(p);
                 });
+        Activity.log("CALL_LEFT", "user", userId, "call", callId);
 
         if (callParticipantRepository.countByCallIdAndLeftAtIsNull(callId) == 0) {
             finishCall(call);
@@ -197,6 +222,7 @@ public class CallService {
         }
 
         finishCall(call);
+        Activity.log("CALL_ENDED_FOR_ALL", "user", userId, "call", callId);
         mediaServiceClient.closeRoom(callId);
     }
 

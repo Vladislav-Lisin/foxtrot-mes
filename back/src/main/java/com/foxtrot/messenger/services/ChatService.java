@@ -1,5 +1,6 @@
 package com.foxtrot.messenger.services;
 
+import com.foxtrot.messenger.logging.Activity;
 import com.foxtrot.messenger.dto.mapping.UserMapper;
 import com.foxtrot.messenger.dto.request.ChatFinderRequest;
 import com.foxtrot.messenger.dto.request.SendMessageRequest;
@@ -24,9 +25,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.*;
 
 import static com.foxtrot.messenger.entity.ChatType.PRIVATE;
@@ -34,25 +38,35 @@ import static com.foxtrot.messenger.entity.ChatType.PRIVATE;
 @Service
 public class ChatService {
 
+    // "В сети", если lastSeen свежее этого порога - см. JwtAuthenticationFilter.touchLastSeen,
+    // который и поддерживает lastSeen свежим на каждый аутентифицированный запрос.
+    private static final Duration ONLINE_THRESHOLD = Duration.ofMinutes(3);
+
     private final ChatMemberRepository chatMemberRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
     private final ChatsRepository chatsRepository;
     private final UserMapper userMapper;
     private final MessageRepository messageRepository;
+    private final BlockService blockService;
+    private final FileStorageService fileStorageService;
 
     public ChatService(ChatMemberRepository chatMemberRepository,
                        ChatMessageRepository chatMessageRepository,
                        UserRepository userRepository,
                        ChatsRepository chatsRepository,
                        UserMapper userMapper,
-                       MessageRepository messageRepository) {
+                       MessageRepository messageRepository,
+                       BlockService blockService,
+                       FileStorageService fileStorageService) {
         this.chatMemberRepository = chatMemberRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.userRepository = userRepository;
         this.chatsRepository = chatsRepository;
         this.userMapper = userMapper;
         this.messageRepository = messageRepository;
+        this.blockService = blockService;
+        this.fileStorageService = fileStorageService;
     }
 
 
@@ -76,6 +90,22 @@ public class ChatService {
 
         GetChatHistoryResponse response = new GetChatHistoryResponse();
         response.setHistory(history);
+        return response;
+    }
+
+    public GetChatHistoryResponse searchMessages(UUID chatId, String term, int page, int size, UUID senderId) {
+        if (!chatMemberRepository.existsByChatIdAndUserId(chatId, senderId)) {
+            throw new AccessDeniedException("Access denied to this chat");
+        }
+
+        PageRequest pageable = PageRequest.of(Math.max(page, 0), Math.max(size, 1));
+
+        Page<MessageResponse> results = messageRepository
+                .searchByChatIdAndTerm(chatId, term, pageable)
+                .map(this::toMessageResponse);
+
+        GetChatHistoryResponse response = new GetChatHistoryResponse();
+        response.setHistory(results);
         return response;
     }
 
@@ -152,6 +182,7 @@ public class ChatService {
         // добавляем пользователей в чат
         addUserToChat(chat.getId(), firstUserId);
         addUserToChat(chat.getId(), secondUserId);
+        Activity.log("CHAT_CREATED", "chat", chat.getId(), "users", firstUserId + "," + secondUserId);
 
         return chat.getId();
     }
@@ -207,12 +238,14 @@ public class ChatService {
         return chatsRepository.findAllByMemberUserId(userId);
     }
 
-    // Получение превью для всех чатов пользователя
+    // Получение превью для всех чатов пользователя - пропускает чаты, скрытые через
+    // "удалить у меня" (см. deleteChatForMe), пока в них не придёт новое сообщение.
     public List<ChatPreviewDTO> getAllUsersChatsPreview(UUID userId){
         List<Chats> chatsList = getAllUserChats(userId);
         chatsList.sort(Comparator.comparing(Chats::getLastMessageAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed());
         List<ChatPreviewDTO> previewDTOList = new ArrayList<>();
         for (Chats chat : chatsList) {
+            if (isHiddenForUser(chat.getId(), userId)) continue;
             previewDTOList.add(buildChatPreviewForUser(chat.getId(), userId));
         }
         return previewDTOList;
@@ -233,6 +266,11 @@ public class ChatService {
         Chats chat = chatsRepository.findById(chatId)
                 .orElseThrow(() -> new EntityNotFoundException("Chat not found: " + chatId));
 
+        UUID partnerId = findPartnerId(chatId, userId);
+        if (partnerId != null && blockService.isBlocked(userId, partnerId)) {
+            return null; // заблокированные не пишут друг другу - см. ChatWebSocketController, null просто не рассылается
+        }
+
         // сохраняем
         Message entity = new Message();
         entity.setChatId(chatId);
@@ -243,6 +281,7 @@ public class ChatService {
         entity.setIsDeleted(false);
 
         Message saved = chatMessageRepository.save(entity);
+        Activity.log("MESSAGE_SENT", "user", userId, "chat", chatId, "len", request.getContent().length());
         // Иначе bulk-update chat_members может выполниться до INSERT в messages → FK fk_last_message
         chatMessageRepository.flush();
 
@@ -280,18 +319,21 @@ public class ChatService {
 
     // Получение данных для получения превью конкретного чата.
     public ChatPreviewDTO buildChatPreviewForUser(UUID chatId, UUID viewerId) {
-        if (!chatMemberRepository.existsByChatIdAndUserId(chatId, viewerId)) {
-            throw new AccessDeniedException("User is not a member of chat: " + chatId);
-        }
+        List<ChatMember> members = chatMemberRepository.findByChatId(chatId);
 
-        Chats chat = chatsRepository.findById(chatId)
-                .orElseThrow(() -> new EntityNotFoundException("Chat not found: " + chatId));
+        ChatMember myMembership = members.stream()
+                .filter(m -> m.getUserId().equals(viewerId))
+                .findFirst()
+                .orElseThrow(() -> new AccessDeniedException("User is not a member of chat: " + chatId));
 
-        UUID partnerId = chatMemberRepository.findByChatId(chatId).stream()
+        UUID partnerId = members.stream()
                 .map(ChatMember::getUserId)
                 .filter(id -> !id.equals(viewerId))
                 .findFirst()
                 .orElseThrow(() -> new EntityNotFoundException("Partner not found for chat: " + chatId));
+
+        Chats chat = chatsRepository.findById(chatId)
+                .orElseThrow(() -> new EntityNotFoundException("Chat not found: " + chatId));
 
         User partner = userRepository.findById(partnerId)
                 .orElseThrow(() -> new EntityNotFoundException("User not found: " + partnerId));
@@ -306,13 +348,112 @@ public class ChatService {
             if (!content.isBlank()) lastMessageText = content;
         }
 
-        return new ChatPreviewDTO(
+        boolean blockedByMe = blockService.isBlockedByMe(viewerId, partnerId);
+        boolean blockedByPartner = blockService.isBlockedByMe(partnerId, viewerId);
+
+        UserResponse partnerDto = userMapper.toDto(partner);
+        // Заблокированные не видят статус онлайн друг друга ни в одну сторону.
+        partnerDto.online = (blockedByMe || blockedByPartner) ? null : isOnline(partner);
+
+        ChatPreviewDTO dto = new ChatPreviewDTO(
                 chatId.toString(),
-                userMapper.toDto(partner),
+                partnerDto,
                 lastMessageText,
                 chat.getLastMessageAt(),
                 chatMessageRepository.countUnread(chatId, viewerId),
-                lastMessage != null ? lastMessage.getSenderId().toString() : null
+                lastMessage != null ? lastMessage.getSenderId().toString() : null,
+                myMembership.getBackgroundUrl(),
+                blockedByMe,
+                blockedByPartner
         );
+        return dto;
+    }
+
+    private boolean isOnline(User user) {
+        LocalDateTime lastSeen = user.getLastSeen();
+        return lastSeen != null && Duration.between(lastSeen, LocalDateTime.now()).compareTo(ONLINE_THRESHOLD) < 0;
+    }
+
+    private boolean isHiddenForUser(UUID chatId, UUID userId) {
+        return chatMemberRepository.findByChatIdAndUserId(chatId, userId)
+                .map(member -> {
+                    if (member.getHiddenAt() == null) return false;
+                    Instant lastMessageAt = member.getLastMessageAt();
+                    return lastMessageAt == null || !lastMessageAt.isAfter(member.getHiddenAt());
+                })
+                .orElse(false);
+    }
+
+    private UUID findPartnerId(UUID chatId, UUID viewerId) {
+        return chatMemberRepository.findByChatId(chatId).stream()
+                .map(ChatMember::getUserId)
+                .filter(id -> !id.equals(viewerId))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private ChatMember requireMembership(UUID chatId, UUID userId) {
+        return chatMemberRepository.findByChatIdAndUserId(chatId, userId)
+                .orElseThrow(() -> new AccessDeniedException("Access denied to this chat"));
+    }
+
+    // ---------- фон чата (персональный, см. ChatMember.backgroundUrl) ----------
+
+    @Transactional
+    public String uploadChatBackground(UUID chatId, UUID userId, MultipartFile file) {
+        ChatMember membership = requireMembership(chatId, userId);
+        String url = fileStorageService.store(file);
+        membership.setBackgroundUrl(url);
+        chatMemberRepository.save(membership);
+        Activity.log("BACKGROUND_UPLOADED", "user", userId, "chat", chatId);
+        return url;
+    }
+
+    @Transactional
+    public void resetChatBackground(UUID chatId, UUID userId) {
+        ChatMember membership = requireMembership(chatId, userId);
+        membership.setBackgroundUrl(null);
+        chatMemberRepository.save(membership);
+        Activity.log("BACKGROUND_RESET", "user", userId, "chat", chatId);
+    }
+
+    // ---------- блокировка собеседника чата ----------
+
+    @Transactional
+    public void blockChatPartner(UUID chatId, UUID userId) {
+        requireMembership(chatId, userId);
+        UUID partnerId = findPartnerId(chatId, userId);
+        if (partnerId == null) throw new EntityNotFoundException("Partner not found for chat: " + chatId);
+        blockService.block(userId, partnerId);
+        Activity.log("USER_BLOCKED", "user", userId, "target", partnerId, "chat", chatId);
+    }
+
+    @Transactional
+    public void unblockChatPartner(UUID chatId, UUID userId) {
+        requireMembership(chatId, userId);
+        UUID partnerId = findPartnerId(chatId, userId);
+        if (partnerId == null) throw new EntityNotFoundException("Partner not found for chat: " + chatId);
+        blockService.unblock(userId, partnerId);
+        Activity.log("USER_UNBLOCKED", "user", userId, "target", partnerId, "chat", chatId);
+    }
+
+    // ---------- удаление чата ----------
+
+    /** Удалить чат только у себя - собеседник ничего не теряет, см. ChatMember.hiddenAt. */
+    @Transactional
+    public void deleteChatForMe(UUID chatId, UUID userId) {
+        ChatMember membership = requireMembership(chatId, userId);
+        membership.setHiddenAt(Instant.now());
+        chatMemberRepository.save(membership);
+        Activity.log("CHAT_HIDDEN_FOR_ME", "user", userId, "chat", chatId);
+    }
+
+    /** Удалить чат для всех - необратимо стирает переписку у обоих. */
+    @Transactional
+    public void deleteChatForEveryone(UUID chatId, UUID userId) {
+        requireMembership(chatId, userId);
+        chatMessageRepository.softDeleteAllByChatId(chatId);
+        chatMemberRepository.deleteByChatId(chatId);
+        Activity.log("CHAT_DELETED_FOR_ALL", "user", userId, "chat", chatId);
     }
 }

@@ -17,5 +17,9 @@ public class ChatPreviewDTO {
     private Instant lastMessageAt;
     private long unreadCount;
     private String lastMessageSenderId;
+    // персональный фон ИМЕННО этого чата у текущего пользователя (см. ChatMember.backgroundUrl)
+    private String backgroundUrl;
+    private boolean blockedByMe;
+    private boolean blockedByPartner;
 
 }

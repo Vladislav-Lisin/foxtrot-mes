@@ -13,6 +13,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import java.util.List;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import com.foxtrot.messenger.entity.User;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -62,6 +65,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             if (jwtService.isTokenValid(token, user.getEmail())) {
 
+                touchLastSeen(user);
+
                 var authorities = List.of(
                         new SimpleGrantedAuthority("ROLE_" + user.getPlatformRole().name())
                 );
@@ -79,5 +84,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    // "В сети" (см. ChatService) показывается по свежести lastSeen - обновляем её на
+    // каждый аутентифицированный запрос, а не только на логин, иначе статус был бы
+    // по сути "последний вход", а не реальное присутствие. Троттлинг на минуту - иначе
+    // почти каждый REST-запрос фронта писал бы в БД.
+    private static final Duration LAST_SEEN_UPDATE_THRESHOLD = Duration.ofMinutes(1);
+
+    private void touchLastSeen(User user) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime last = user.getLastSeen();
+        if (last == null || Duration.between(last, now).compareTo(LAST_SEEN_UPDATE_THRESHOLD) > 0) {
+            user.setLastSeen(now);
+            userRepository.save(user);
+        }
     }
 }

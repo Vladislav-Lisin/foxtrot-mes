@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 
@@ -16,6 +17,10 @@ public interface ChatMemberRepository extends JpaRepository<ChatMember, UUID> {
 
     boolean existsByChatIdAndUserId(UUID chatId, UUID userId);
     List<ChatMember> findByChatId(UUID chatId);
+    Optional<ChatMember> findByChatIdAndUserId(UUID chatId, UUID userId);
+
+    // "Удалить чат для всех" - сносит членство обоих участников разом
+    void deleteByChatId(UUID chatId);
 
     @Transactional
     @Modifying

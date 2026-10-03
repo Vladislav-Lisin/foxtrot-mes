@@ -40,4 +40,15 @@ public interface ChatMessageRepository extends JpaRepository<Message, UUID> {
     long countUnread(UUID chatId, UUID userId);
 
     List<Message> findByChatIdOrderByCreatedAtDesc(UUID chatId);
+
+    // "Удалить чат для всех" - переиспользует уже существующий флаг is_deleted, которым
+    // отмечается удаление отдельного сообщения, просто разом на всю переписку.
+    @Modifying
+    @Transactional
+    @Query("""
+    update Message m
+    set m.isDeleted = true
+    where m.chatId = :chatId
+""")
+    void softDeleteAllByChatId(UUID chatId);
 }

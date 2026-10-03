@@ -41,4 +41,13 @@ public class RefreshTokenService {
 
         return token;
     }
+
+    // Ротация: старый токен одноразовый - каждый /refresh выдаёт новый и гасит старый,
+    // а не продлевает его же. Ограничивает ущерб, если refresh-токен утёк - он годен
+    // только до первого использования, а не все 7 дней.
+    public RefreshToken rotate(RefreshToken oldToken) {
+        User user = oldToken.getUser();
+        repository.delete(oldToken);
+        return create(user);
+    }
 }

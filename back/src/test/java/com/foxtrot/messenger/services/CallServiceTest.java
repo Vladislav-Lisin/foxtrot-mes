@@ -4,6 +4,7 @@ import com.foxtrot.messenger.dto.response.CallResponse;
 import com.foxtrot.messenger.entity.Call;
 import com.foxtrot.messenger.entity.CallParticipant;
 import com.foxtrot.messenger.entity.CallStatus;
+import com.foxtrot.messenger.entity.ChatMember;
 import com.foxtrot.messenger.exception.custom.EntityAlreadyExistsException;
 import com.foxtrot.messenger.exception.custom.EntityNotFoundException;
 import com.foxtrot.messenger.integration.MediaServiceClient;
@@ -43,6 +44,8 @@ class CallServiceTest {
     private CallTokenService callTokenService;
     @Mock
     private SimpMessagingTemplate messagingTemplate;
+    @Mock
+    private BlockService blockService;
 
     private CallService callService;
 
@@ -52,7 +55,7 @@ class CallServiceTest {
         callService = new CallService(
                 callRepository, callParticipantRepository, chatMemberRepository,
                 mediaServiceClient, callTokenService, messagingTemplate,
-                new CallRateLimiter(), "https://media.example.com"
+                new CallRateLimiter(), blockService, "https://media.example.com"
         );
     }
 
@@ -110,6 +113,41 @@ class CallServiceTest {
         assertThat(response.getRoomId()).isEqualTo("room-1");
         assertThat(response.getMediaServiceUrl()).isEqualTo("https://media.example.com");
         verify(callParticipantRepository).save(argThat(p -> p.getUserId().equals(ownerId)));
+    }
+
+    @Test
+    void startChatCallFailsWhenBlockedByThePartner() {
+        UUID chatId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        UUID partnerId = UUID.randomUUID();
+        ChatMember partnerMembership = new ChatMember();
+        partnerMembership.setUserId(partnerId);
+        when(chatMemberRepository.existsByChatIdAndUserId(chatId, ownerId)).thenReturn(true);
+        when(chatMemberRepository.findByChatId(chatId)).thenReturn(List.of(partnerMembership));
+        when(blockService.isBlocked(ownerId, partnerId)).thenReturn(true);
+
+        assertThatThrownBy(() -> callService.startChatCall(chatId, ownerId))
+                .isInstanceOf(AccessDeniedException.class);
+
+        verifyNoInteractions(mediaServiceClient);
+    }
+
+    @Test
+    void joinCallFailsWhenBlockedByThePartner() {
+        UUID callId = UUID.randomUUID();
+        UUID chatId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        UUID partnerId = UUID.randomUUID();
+        ChatMember partnerMembership = new ChatMember();
+        partnerMembership.setUserId(partnerId);
+        when(callRepository.findById(callId))
+                .thenReturn(Optional.of(newCall(callId, chatId, partnerId, CallStatus.ACTIVE)));
+        when(chatMemberRepository.existsByChatIdAndUserId(chatId, userId)).thenReturn(true);
+        when(chatMemberRepository.findByChatId(chatId)).thenReturn(List.of(partnerMembership));
+        when(blockService.isBlocked(userId, partnerId)).thenReturn(true);
+
+        assertThatThrownBy(() -> callService.joinCall(callId, userId))
+                .isInstanceOf(AccessDeniedException.class);
     }
 
     @Test

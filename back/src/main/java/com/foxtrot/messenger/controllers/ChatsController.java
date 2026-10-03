@@ -13,7 +13,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -51,6 +53,58 @@ public class ChatsController {
     @GetMapping("/all-chats-preview")
     public ResponseEntity<GetAllUserChatsPreviewResponse> getAllUserChatsPreview(@AuthenticationPrincipal UserPrincipal principal){
         return ResponseEntity.ok(new GetAllUserChatsPreviewResponse(chatService.getAllUsersChatsPreview(principal.getId())));
+    }
+
+    @GetMapping("/{chatId}/search")
+    public ResponseEntity<GetChatHistoryResponse> searchMessages(@PathVariable UUID chatId,
+                                                                   @RequestParam String query,
+                                                                   @RequestParam(defaultValue = "0") int page,
+                                                                   @RequestParam(defaultValue = "20") int size,
+                                                                   @AuthenticationPrincipal UserPrincipal principal){
+        return ResponseEntity.ok(chatService.searchMessages(chatId, query, page, size, principal.getId()));
+    }
+
+    @PostMapping("/{chatId}/background")
+    public ResponseEntity<Map<String, String>> uploadChatBackground(@PathVariable UUID chatId,
+                                                                       @RequestParam("file") MultipartFile file,
+                                                                       @AuthenticationPrincipal UserPrincipal principal){
+        String url = chatService.uploadChatBackground(chatId, principal.getId(), file);
+        return ResponseEntity.ok(Map.of("backgroundUrl", url));
+    }
+
+    @DeleteMapping("/{chatId}/background")
+    public ResponseEntity<Void> resetChatBackground(@PathVariable UUID chatId,
+                                                      @AuthenticationPrincipal UserPrincipal principal){
+        chatService.resetChatBackground(chatId, principal.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{chatId}/block")
+    public ResponseEntity<Void> blockChatPartner(@PathVariable UUID chatId,
+                                                   @AuthenticationPrincipal UserPrincipal principal){
+        chatService.blockChatPartner(chatId, principal.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{chatId}/block")
+    public ResponseEntity<Void> unblockChatPartner(@PathVariable UUID chatId,
+                                                     @AuthenticationPrincipal UserPrincipal principal){
+        chatService.unblockChatPartner(chatId, principal.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{chatId}/for-me")
+    public ResponseEntity<Void> deleteChatForMe(@PathVariable UUID chatId,
+                                                  @AuthenticationPrincipal UserPrincipal principal){
+        chatService.deleteChatForMe(chatId, principal.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{chatId}/for-everyone")
+    public ResponseEntity<Void> deleteChatForEveryone(@PathVariable UUID chatId,
+                                                        @AuthenticationPrincipal UserPrincipal principal){
+        chatService.deleteChatForEveryone(chatId, principal.getId());
+        return ResponseEntity.noContent().build();
     }
 
 }

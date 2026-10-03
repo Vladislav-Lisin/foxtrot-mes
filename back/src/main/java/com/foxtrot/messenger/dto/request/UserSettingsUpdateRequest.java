@@ -7,4 +7,6 @@ import lombok.Data;
 public class UserSettingsUpdateRequest {
     public String username;
     public String tag;
+    public String statusText;
+    public String bio;
 }

@@ -27,6 +27,16 @@ public class User {
     @Column(name = "avatar_url")
     private String avatarUrl;
 
+    // Короткий произвольный статус (как в Instagram) - "в отпуске до 15 числа" и т.п.
+    // Никакой даты/логики истечения не парсим - пользователь сам пишет что хочет и сам
+    // потом убирает, это просто текст.
+    @Column(name = "status_text", length = 100)
+    private String statusText;
+
+    // Постоянное описание профиля ("о себе") - в отличие от statusText не меняется по настроению.
+    @Column(name = "bio", length = 200)
+    private String bio;
+
     @Column(name = "last_seen")
     private LocalDateTime lastSeen;
 
@@ -93,6 +103,22 @@ public class User {
 
     public void setAvatarUrl(String avatarUrl) {
         this.avatarUrl = avatarUrl;
+    }
+
+    public String getStatusText() {
+        return statusText;
+    }
+
+    public void setStatusText(String statusText) {
+        this.statusText = statusText;
+    }
+
+    public String getBio() {
+        return bio;
+    }
+
+    public void setBio(String bio) {
+        this.bio = bio;
     }
 
     public LocalDateTime getLastSeen() {

@@ -41,7 +41,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       SPRING_JPA_HIBERNATE_DDL_AUTO: ${SPRING_JPA_HIBERNATE_DDL_AUTO:-update}
-      SPRING_JPA_SHOW_SQL: ${SPRING_JPA_SHOW_SQL:-true}
+      SPRING_JPA_SHOW_SQL: ${SPRING_JPA_SHOW_SQL:-false}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-86400000}
       CALL_JWT_SECRET: ${CALL_JWT_SECRET:?set CALL_JWT_SECRET in .env}
@@ -60,6 +60,16 @@ services:
       # media-service/фронту. JAVA_TOOL_OPTIONS - стандартная переменная, которую java
       # подхватывает сама, без правки Dockerfile/ENTRYPOINT.
       JAVA_TOOL_OPTIONS: "-Xmx400m -XX:MaxMetaspaceSize=128m"
+      # Путь ВНУТРИ контейнера - фиксированный, реальное расположение на хосте
+      # задаётся через volumes ниже (UPLOADS_HOST_DIR), как и у certs у nginx.
+      APP_UPLOADS_DIR: /app/uploads
+      LOG_DIR: /app/logs
+    volumes:
+      # Фон чата (загруженные пользователями картинки) - бинд-маунт, иначе файлы
+      # терялись бы при каждом пересоздании контейнера (--force-recreate при деплое).
+      - ${UPLOADS_HOST_DIR:-./uploads}:/app/uploads
+      # Логи приложения (app.log, errors.log, activity.log) - видны на хосте в ./logs
+      - ${LOG_HOST_DIR:-./logs}:/app/logs
     depends_on:
       postgres:
         condition: service_healthy

@@ -53,11 +53,12 @@ public class AuthController {
         User user = token.getUser();
 
         String newAccessToken = jwtService.generateToken(user.getEmail());
+        RefreshToken rotated = refreshTokenService.rotate(token);
 
         return ResponseEntity.ok(new AuthResponse(
                 authService.toDto(user),
                 newAccessToken,
-                refreshToken // можно тот же вернуть (или сделать ротацию позже)
+                rotated.getToken()
         ));
     }
 }

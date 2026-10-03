@@ -56,7 +56,9 @@ export const secureFetch = async (
     headers.set("Authorization", `Bearer ${token.value}`);
   }
 
-  if (options.body && !headers.has("Content-Type")) {
+  // FormData (загрузка файла) не должен получить "application/json" - браузеру самому
+  // нужно выставить Content-Type с multipart-boundary, вручную тут это не сделать.
+  if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -78,7 +80,7 @@ export const secureFetch = async (
       const retryHeaders = new Headers(options.headers || {});
       retryHeaders.set("Authorization", `Bearer ${newToken}`);
 
-      if (options.body && !retryHeaders.has("Content-Type")) {
+      if (options.body && !(options.body instanceof FormData) && !retryHeaders.has("Content-Type")) {
         retryHeaders.set("Content-Type", "application/json");
       }
 

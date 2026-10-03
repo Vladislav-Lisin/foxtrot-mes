@@ -42,6 +42,8 @@ const handleSelectChat = async (chat: (typeof filteredChats.value)[number]) => {
     :last-status="chat.lastOutgoingStatus ?? undefined"
     :last-message-sender-id="chat.lastMessageSenderId ?? undefined"
     :unread-count="chat.unreadCount"
+    :online="chat.partnerOnline ?? null"
+    :status-text="chat.partnerStatusText ?? null"
     @select="handleSelectChat(chat)"
   />
 </template>

@@ -1,6 +1,19 @@
 import type { StompSubscription } from "@stomp/stompjs"
-import { apiBase } from "~/api/apiBase"
-import { createPrivateChat, findChatByTag, getAllChatsPreview, getChatHistory } from "~/api/chats"
+import { apiBase, mediaUrl } from "~/api/apiBase"
+import { fetchMe } from "~/api/auth"
+import {
+  createPrivateChat,
+  findChatByTag,
+  getAllChatsPreview,
+  getChatHistory,
+  searchChatMessages as searchChatMessagesApi,
+  uploadChatBackground as uploadChatBackgroundApi,
+  resetChatBackground as resetChatBackgroundApi,
+  blockChatPartner as blockChatPartnerApi,
+  unblockChatPartner as unblockChatPartnerApi,
+  deleteChatForMe as deleteChatForMeApi,
+  deleteChatForEveryone as deleteChatForEveryoneApi
+} from "~/api/chats"
 import type {
   ChatFinderResponse,
   ChatMessage,
@@ -26,6 +39,13 @@ export type ChatPreviewUI = {
   unreadCount: number
   /** Кто прислал lastMessage - для "Вы: ..." в списке чатов у отправителя */
   lastMessageSenderId?: string | null
+  /** null, если собеседники заблокировали друг друга (см. ChatPreviewDTO) */
+  partnerOnline?: boolean | null
+  partnerStatusText?: string | null
+  partnerBio?: string | null
+  backgroundUrl?: string | null
+  blockedByMe?: boolean
+  blockedByPartner?: boolean
 }
 
 function normalizeTagForRequest(tag: string) {
@@ -75,7 +95,7 @@ function dtoToPreview(dto: ChatPreviewDTO): ChatPreviewUI {
     chatId: dto.chatId,
     userTag: dto.partner.tag,
     username: dto.partner.username,
-    avatar: dto.partner.avatarUrl ?? null,
+    avatar: mediaUrl(dto.partner.avatarUrl),
     type: "personal",
     lastMessage: dto.lastMessage ?? "",
     lastMessageAt: dto.lastMessageAt ?? null,
@@ -83,6 +103,12 @@ function dtoToPreview(dto: ChatPreviewDTO): ChatPreviewUI {
     alreadyExists: true,
     unreadCount: dto.unreadCount ?? 0,
     lastMessageSenderId: dto.lastMessageSenderId ?? null,
+    partnerOnline: dto.partner.online ?? null,
+    partnerStatusText: dto.partner.statusText ?? null,
+    partnerBio: dto.partner.bio ?? null,
+    backgroundUrl: dto.backgroundUrl ?? null,
+    blockedByMe: dto.blockedByMe ?? false,
+    blockedByPartner: dto.blockedByPartner ?? false,
   }
 }
 
@@ -92,13 +118,16 @@ function finderToPreview(dto: ChatFinderResponse): ChatPreviewUI {
     chatId: dto.chatId,
     userTag: dto.partner.tag,
     username: dto.partner.username,
-    avatar: dto.partner.avatarUrl ?? null,
+    avatar: mediaUrl(dto.partner.avatarUrl),
     type: "personal",
     lastMessage: dto.alreadyExists ? (dto.lastMessage ?? "") : "здесь пока нет сообщений",
     lastMessageAt: dto.lastMessageAt ?? null,
     alreadyExists: dto.alreadyExists,
     unreadCount: 0,
     lastMessageSenderId: null,
+    partnerOnline: dto.partner.online ?? null,
+    partnerStatusText: dto.partner.statusText ?? null,
+    partnerBio: dto.partner.bio ?? null,
   }
 }
 
@@ -557,7 +586,130 @@ export const useChats = () => {
     await socket.send("/app/read", { chatId })
   }
 
+  // Применяет изменение и к selectedChat (если это он), и к записи в списке чатов -
+  // иначе шапка открытого чата и список слева после действия разошлись бы до следующей
+  // полной перезагрузки превью.
+  const applyToSelectedAndPreview = (chatId: string, patch: Partial<ChatPreviewUI>) => {
+    if (selectedChat.value?.chatId === chatId) {
+      selectedChat.value = { ...selectedChat.value, ...patch }
+    }
+    const preview = chatPreviews.value.find(p => p.chatId === chatId)
+    if (preview) {
+      chatPreviews.value = upsertPreview(chatPreviews.value, { ...preview, ...patch })
+    }
+  }
+
+  const removeChatFromState = (chatId: string) => {
+    chatPreviews.value = chatPreviews.value.filter(p => p.chatId !== chatId)
+    if (selectedChat.value?.chatId === chatId) selectedChat.value = null
+  }
+
+  const requireSelectedChatId = () => {
+    const chatId = selectedChat.value?.chatId
+    if (!chatId) throw new Error("chat is not selected")
+    return chatId
+  }
+
+  const uploadBackground = async (file: File) => {
+    const chatId = requireSelectedChatId()
+    const { backgroundUrl } = await uploadChatBackgroundApi(chatId, file)
+    applyToSelectedAndPreview(chatId, { backgroundUrl })
+  }
+
+  const resetBackground = async () => {
+    const chatId = requireSelectedChatId()
+    await resetChatBackgroundApi(chatId)
+    applyToSelectedAndPreview(chatId, { backgroundUrl: null })
+  }
+
+  const blockPartner = async () => {
+    const chatId = requireSelectedChatId()
+    await blockChatPartnerApi(chatId)
+    applyToSelectedAndPreview(chatId, { blockedByMe: true, partnerOnline: null })
+  }
+
+  const unblockPartner = async () => {
+    const chatId = requireSelectedChatId()
+    await unblockChatPartnerApi(chatId)
+    applyToSelectedAndPreview(chatId, { blockedByMe: false })
+  }
+
+  const deleteChatForMe = async () => {
+    const chatId = requireSelectedChatId()
+    await deleteChatForMeApi(chatId)
+    removeChatFromState(chatId)
+  }
+
+  const deleteChatForEveryone = async () => {
+    const chatId = requireSelectedChatId()
+    await deleteChatForEveryoneApi(chatId)
+    removeChatFromState(chatId)
+  }
+
+  const searchMessagesInChat = async (query: string, page = 0, size = 20) => {
+    const chatId = requireSelectedChatId()
+    return searchChatMessagesApi(chatId, query, page, size)
+  }
+
+  // Фоновое обновление без перезагрузки страницы: heartbeat (fetchMe сам по себе обновляет
+  // lastSeen на бэке) + тихо подтягиваем поля собеседников (онлайн, статус, аватарка, фон,
+  // блокировка). Сообщения и непрочитанные не трогаем - ими управляет WebSocket.
+  const refreshPresence = async () => {
+    if (!import.meta.client || !token.value) return
+
+    const startedAt = Date.now()
+    const me = await fetchMe()
+    const { setUser, userWrittenSince } = useUserState()
+    if (me && !userWrittenSince(startedAt)) {
+      setUser({ ...me, statusText: me.statusText ?? null })
+    }
+
+    // Во время активного поиска по тегу список специально подменён результатом поиска -
+    // не трогаем, иначе он бы перезатирался.
+    if (lastSearchedTag.value || isSearching.value) return
+
+    const fresh = await getAllChatsPreview()
+    const freshByChatId = new Map(fresh.map(dto => [dto.chatId, dto]))
+
+    chatPreviews.value = chatPreviews.value.map((p) => {
+      const dto = p.chatId ? freshByChatId.get(p.chatId) : undefined
+      if (!dto) return p
+      const f = dtoToPreview(dto)
+      return {
+        ...p,
+        username: f.username,
+        userTag: f.userTag,
+        avatar: f.avatar,
+        partnerOnline: f.partnerOnline,
+        partnerStatusText: f.partnerStatusText,
+        partnerBio: f.partnerBio,
+        backgroundUrl: f.backgroundUrl,
+        blockedByMe: f.blockedByMe,
+        blockedByPartner: f.blockedByPartner,
+      }
+    })
+
+    const sel = selectedChat.value
+    if (sel?.chatId) {
+      const updated = chatPreviews.value.find(p => p.chatId === sel.chatId)
+      if (updated) {
+        selectedChat.value = {
+          ...sel,
+          username: updated.username,
+          userTag: updated.userTag,
+          avatar: updated.avatar,
+          partnerOnline: updated.partnerOnline,
+          partnerStatusText: updated.partnerStatusText,
+          backgroundUrl: updated.backgroundUrl,
+          blockedByMe: updated.blockedByMe,
+          blockedByPartner: updated.blockedByPartner,
+        }
+      }
+    }
+  }
+
   return {
+    refreshPresence,
     chatPreviews,
     activeFilter,
     filteredChats,
@@ -574,5 +726,12 @@ export const useChats = () => {
     markChatRead,
     connectWsIfNeeded,
     resetChatUiForAccountSwitch,
+    uploadBackground,
+    resetBackground,
+    blockPartner,
+    unblockPartner,
+    deleteChatForMe,
+    deleteChatForEveryone,
+    searchMessagesInChat,
   }
 }

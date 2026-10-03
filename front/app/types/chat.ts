@@ -3,6 +3,10 @@ export type UserResponse = {
   username: string
   tag: string
   avatarUrl: string | null
+  // null, если собеседники заблокировали друг друга - см. ChatPreviewDTO
+  online?: boolean | null
+  statusText?: string | null
+  bio?: string | null
 }
 
 export type ChatFinderResponse = {
@@ -22,6 +26,10 @@ export type ChatPreviewDTO = {
   lastMessageStatus?: MessageStatus | null
   unreadCount?: number
   lastMessageSenderId?: string | null
+  // персональный фон ИМЕННО этого чата у текущего пользователя
+  backgroundUrl?: string | null
+  blockedByMe?: boolean
+  blockedByPartner?: boolean
 }
 
 export type MessageStatus = "SENT" | "DELIVERED" | "READ"

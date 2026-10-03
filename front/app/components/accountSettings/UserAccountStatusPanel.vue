@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import SettingsPanel from "./SettingsPanel.vue";
+import { apiBase } from "~/api/apiBase";
 
 const isSettingsOpen = ref(false);
 const { user } = useUserState();
@@ -40,17 +41,27 @@ const startConference = async () => {
 <template>
   <aside class="mt-auto shrink-0 border-t border-white/30 p-3 bg-[#0e1425]">
     <!-- Верхняя часть -->
-    <div class="flex items-center gap-3">
-      <img
-        src="/ava.jpg"
-        class="h-11 w-11 rounded-full object-cover"
-        alt="avatar"
-      >
-      <div class="flex flex-col">
-        <span class="font-semibold">{{ user?.username }}</span>
-        <span class="text-sm text-gray-400"> @{{ user?.tag }} </span>
+    <!-- Профиль зависит от пользователя, которого на сервере ещё нет (он грузится в браузере),
+         поэтому рендерим только на клиенте - иначе после F5 Vue оставляет серверную заглушку. -->
+    <ClientOnly>
+      <div class="flex items-center gap-3">
+        <img
+          :src="user?.avatarUrl ? `${apiBase()}${user.avatarUrl}` : '/ava.jpg'"
+          class="h-11 w-11 rounded-full object-cover"
+          alt="avatar"
+        >
+        <div class="flex flex-col">
+          <span class="font-semibold">{{ user?.username }}</span>
+          <span class="text-sm text-gray-400"> @{{ user?.tag }} </span>
+        </div>
       </div>
-    </div>
+      <template #fallback>
+        <div class="flex items-center gap-3">
+          <div class="h-11 w-11 rounded-full bg-gray-700" />
+          <div class="h-4 w-24 rounded bg-gray-700" />
+        </div>
+      </template>
+    </ClientOnly>
 
     <UButton
       class="mt-3 h-7 w-full justify-center"

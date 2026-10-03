@@ -1,6 +1,7 @@
 import { secureFetch } from "./auth";
 import { apiBase } from "./apiBase";
 import { extractErrorMessage } from "./apiError";
+import { prepareImageForUpload } from "./imageCompress";
 import type { ChatFinderResponse, ChatPreviewDTO, GetChatHistoryResponse } from "~/types/chat";
 
 export const findChatByTag = async (tag: string) => {
@@ -61,4 +62,72 @@ export const getChatHistory = async (chatId: string, page = 0, size = 30) => {
   }
 
   return (await response.json()) as GetChatHistoryResponse;
+};
+
+export const searchChatMessages = async (chatId: string, query: string, page = 0, size = 20) => {
+  const url = `${apiBase()}/chats/${chatId}/search?${new URLSearchParams({ query, page: String(page), size: String(size) })}`;
+  const response = await secureFetch(url, { method: "GET" });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, "Не удалось выполнить поиск по сообщениям"));
+  }
+
+  return (await response.json()) as GetChatHistoryResponse;
+};
+
+export const uploadChatBackground = async (chatId: string, original: File) => {
+  const file = await prepareImageForUpload(original);
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await secureFetch(`${apiBase()}/chats/${chatId}/background`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, "Не удалось загрузить фон чата"));
+  }
+
+  return (await response.json()) as { backgroundUrl: string };
+};
+
+export const resetChatBackground = async (chatId: string) => {
+  const response = await secureFetch(`${apiBase()}/chats/${chatId}/background`, { method: "DELETE" });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, "Не удалось сбросить фон чата"));
+  }
+};
+
+export const blockChatPartner = async (chatId: string) => {
+  const response = await secureFetch(`${apiBase()}/chats/${chatId}/block`, { method: "POST" });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, "Не удалось заблокировать пользователя"));
+  }
+};
+
+export const unblockChatPartner = async (chatId: string) => {
+  const response = await secureFetch(`${apiBase()}/chats/${chatId}/block`, { method: "DELETE" });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, "Не удалось разблокировать пользователя"));
+  }
+};
+
+export const deleteChatForMe = async (chatId: string) => {
+  const response = await secureFetch(`${apiBase()}/chats/${chatId}/for-me`, { method: "DELETE" });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, "Не удалось удалить чат"));
+  }
+};
+
+export const deleteChatForEveryone = async (chatId: string) => {
+  const response = await secureFetch(`${apiBase()}/chats/${chatId}/for-everyone`, { method: "DELETE" });
+
+  if (!response.ok) {
+    throw new Error(await extractErrorMessage(response, "Не удалось удалить чат для всех"));
+  }
 };

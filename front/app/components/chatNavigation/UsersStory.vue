@@ -7,6 +7,10 @@ const props = defineProps({
   lastStatus: String,
   lastMessageSenderId: String,
   unreadCount: { type: Number, default: 0 },
+  // null - собеседники заблокировали друг друга, статус скрыт (см. ChatPreviewDTO на бэке) -
+  // тогда кружок не рисуем вообще, а не красим его в какой-то один цвет наугад.
+  online: { type: Boolean, default: null },
+  statusText: { type: String, default: null },
 });
 
 const emit = defineEmits(["select"])
@@ -27,12 +31,23 @@ const isMine = computed(() =>
 
 <template>
   <div class="flex gap-3 p-3 hover:bg-gray-800 rounded cursor-pointer border-b border-gray-700" @click="emit('select')">
-    <img :src="avatar || '/ava.jpg'" class="w-10 h-10 rounded-full">
+    <div class="relative h-10 w-10 shrink-0">
+      <img :src="avatar || '/ava.jpg'" class="h-10 w-10 rounded-full object-cover">
+      <span
+        v-if="online !== null"
+        class="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-[#0b1220]"
+        :class="online ? 'bg-green-500' : 'bg-gray-500'"
+        :title="online ? 'в сети' : 'не в сети'"
+      />
+    </div>
     <div class="flex flex-col min-w-0 flex-1">
       <span :class="['flex items-center justify-between gap-2', !isMine && unreadCount > 0 ? 'font-bold text-white' : 'font-semibold']">
         {{ username }}
         <UBadge v-if="!isMine && unreadCount > 0" class="shrink-0" size="xs" variant="solid" color="primary" :label="unreadCount > 9 ? '9+' : String(unreadCount)" />
       </span>
+      <div v-if="statusText" class="truncate text-xs italic text-warning-400">
+        {{ statusText }}
+      </div>
       <div class="flex items-center gap-2 min-w-0">
         <span :class="['text-sm truncate', !isMine && unreadCount > 0 ? 'text-gray-200 font-medium' : 'text-gray-400']">
           <template v-if="isMine">Вы: {{ lastMessage }}</template>

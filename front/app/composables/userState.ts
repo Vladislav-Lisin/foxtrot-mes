@@ -3,11 +3,19 @@ export interface User {
   username: string
   tag: string
   avatarUrl: string | null
+  // Короткий статус вида "в отпуске до 15 числа" - виден везде, не только в своём профиле.
+  statusText?: string | null
+  // Постоянное описание профиля ("о себе")
+  bio?: string | null
 }
 
 const TOKEN_KEY = "auth_token";
 const TOKEN_CREATED_KEY = "auth_token_created";
 const REFRESH_TOKEN_KEY = "auth_refresh_token";
+
+// Время последнего локального изменения пользователя. Фоновое обновление не должно
+// перезаписывать данные, если пользователь успел поменять их, пока его запрос был в пути.
+let lastUserWriteAt = 0;
 
 export const useUserState = () => {
   const user = useState<User | null>("user", () => null);
@@ -17,8 +25,11 @@ export const useUserState = () => {
   const isAuthReady = useState("auth_ready", () => false);
 
   const setUser = (u: User) => {
+    lastUserWriteAt = Date.now();
     user.value = u;
   };
+
+  const userWrittenSince = (ts: number) => lastUserWriteAt > ts;
 
   const setToken = (t: string | null) => {
     token.value = t;
@@ -74,6 +85,7 @@ export const useUserState = () => {
 
   return {
     user,
+    userWrittenSince,
     token,
     tokenCreatedAt,
     refreshToken,

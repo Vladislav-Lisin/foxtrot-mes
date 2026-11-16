@@ -19,7 +19,9 @@ export async function handleJoin(
   // у пира УЖЕ есть активный producer (аудио/камера). Если пир ещё ничего не включил -
   // новичок так и не узнаёт о его существовании. Явно шлём снапшот текущего состава.
   for (const peer of room.participants.values()) {
-    if (peer.userId === participant.userId) continue;
+    // Detached - уже отключился и ждёт grace-период. Новому участнику он не нужен:
+    // иначе после перезахода появляется фантомный тайл без медиа/доступа.
+    if (peer.userId === participant.userId || peer.isDetached) continue;
     participant.send({ type: "participant-joined", payload: { userId: peer.userId } });
   }
 

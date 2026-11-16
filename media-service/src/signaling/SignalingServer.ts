@@ -84,7 +84,7 @@ async function handleConnection(ws: WebSocket, _req: IncomingMessage): Promise<v
 }
 
 async function authenticate(ws: WebSocket, text: string): Promise<{ room: Room; participant: Participant } | null> {
-  let message: { reqId?: string; type?: string; payload?: { token?: string; sessionId?: string; resume?: boolean } };
+  let message: { reqId?: string; type?: string; payload?: { token?: string; sessionId?: string; resume?: boolean; previousToken?: string } };
   try {
     message = JSON.parse(text);
   } catch {
@@ -153,6 +153,31 @@ async function authenticate(ws: WebSocket, text: string): Promise<{ room: Room; 
   if (userId !== tokenIdentity.userId || callId !== tokenIdentity.callId) {
     ws.close(4401, "Invalid call token");
     return null;
+  }
+
+  // Гость после перезагрузки страницы получает новый userId от backend (guest-join всегда
+  // создаёт новый временный id). Старая сессия ещё может висеть в комнате в grace-периоде -
+  // без этого получаются два "Oleg" в списке, один из которых уже не имеет медиа.
+  // previousToken подписан backend'ом: по нему можно безопасно найти и убрать именно свою
+  // предыдущую сессию. Невалидный/чужой токен просто игнорируем.
+  if (!wantsResume && message.payload?.previousToken) {
+    try {
+      const previous = verifyCallToken(message.payload.previousToken, true);
+      if (previous.callId === tokenIdentity.callId && previous.userId !== userId) {
+        const stale = room.participants.get(previous.userId);
+        if (stale) {
+          const staleTimer = detachTimers.get(stale.sessionId);
+          if (staleTimer) clearTimeout(staleTimer);
+          detachTimers.delete(stale.sessionId);
+          sessionRegistry.remove(stale.sessionId);
+          room.removeParticipant(stale.userId);
+          void notifySpringBoot(room.callId, "LEFT", stale.userId);
+          console.info("[session] stale participant replaced");
+        }
+      }
+    } catch {
+      console.info("[session] previous token rejected");
+    }
   }
 
   let participant: Participant;

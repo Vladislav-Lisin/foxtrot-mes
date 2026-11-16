@@ -328,7 +328,7 @@ function scheduleIceRestart(direction: "send" | "recv", delayMs?: number): void 
 
 async function openSocketAndAuthenticate(
   params: { mediaServiceUrl: string; callToken: string },
-  authPayload: { sessionId?: string; resume: boolean },
+  authPayload: { sessionId?: string; resume: boolean; previousToken?: string },
 ): Promise<AuthResult> {
   const callServerHost = new URL(params.mediaServiceUrl).host;
   const unavailableMessage = `Сервер звонков ${callServerHost} не отвечает. Проверьте MEDIA_SERVICE_PUBLIC_URL и доступность порта.`;
@@ -502,6 +502,7 @@ export const useCallSocket = () => {
   const connect = async (params: {
     callId: string
     callToken: string
+    previousCallToken?: string
     mediaServiceUrl: string
     handlers: CallSocketHandlers
   }): Promise<void> => {
@@ -513,7 +514,7 @@ export const useCallSocket = () => {
     sessionId = crypto.randomUUID();
     intentionalClose = false;
 
-    const auth = await openSocketAndAuthenticate(params, { sessionId, resume: false });
+    const auth = await openSocketAndAuthenticate(params, { sessionId, resume: false, previousToken: params.previousCallToken });
     sessionId = auth.sessionId;
     const handshake = async () => {
       const { rtpCapabilities } = await request<{ rtpCapabilities: unknown }>("get-rtp-capabilities");

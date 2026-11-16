@@ -21,6 +21,41 @@ const RECONNECT_FULL_JOIN_AFTER = 5;
 let hotkeyListenerAttached = false;
 const localTracks: Partial<Record<ProducerKind, MediaStreamTrack>> = {};
 
+// Гостевой callToken живёт 60 секунд, но после VPN/перезагрузки страницы его ещё можно
+// предъявить media-service (подпись проверяется, срок для previousToken игнорируется) -
+// так новая гостевая сессия сразу убирает старую, вместо двух одинаковых тайлов.
+const GUEST_CALL_TOKEN_KEY = "foxtrot:guest-call-token";
+
+const readStoredGuestToken = (callId: string): string | undefined => {
+  if (!import.meta.client) return undefined;
+  try {
+    const raw = sessionStorage.getItem(GUEST_CALL_TOKEN_KEY);
+    if (!raw) return undefined;
+    const stored = JSON.parse(raw) as { callId?: unknown; token?: unknown };
+    return stored.callId === callId && typeof stored.token === "string" ? stored.token : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const storeGuestToken = (callId: string, token: string): void => {
+  if (!import.meta.client) return;
+  try {
+    sessionStorage.setItem(GUEST_CALL_TOKEN_KEY, JSON.stringify({ callId, token }));
+  } catch {
+    // приватный режим/запрет storage - не критично, просто не сможем убрать старый тайл
+  }
+};
+
+const clearStoredGuestToken = (): void => {
+  if (!import.meta.client) return;
+  try {
+    sessionStorage.removeItem(GUEST_CALL_TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+};
+
 export const useCall = () => {
   const activeCall = useState<CallResponse | null>("activeCall", () => null);
   const incomingCall = useState<CallNotification | null>("incomingCall", () => null);
@@ -170,10 +205,13 @@ export const useCall = () => {
     },
   });
 
-  const enterCall = async (call: CallResponse) => {
+  const enterCall = async (call: CallResponse, options: { persistGuestToken?: boolean } = {}) => {
     if (!import.meta.client) return;
     if (!call.callToken) throw new Error("No call token in response");
 
+    // Токен предыдущего захода (гостевой или после reload) - media-service по нему уберёт
+    // старую сессию этого же человека, если она ещё висит в grace-периоде.
+    const previousCallToken = readStoredGuestToken(call.callId);
     connecting.value = true;
     activeCall.value = call;
     myCallUserId.value = decodeTokenSubject(call.callToken);
@@ -185,9 +223,12 @@ export const useCall = () => {
       await useCallSocket().connect({
         callId: call.callId,
         callToken: call.callToken,
+        previousCallToken,
         mediaServiceUrl: call.mediaServiceUrl,
         handlers: buildSocketHandlers(),
       });
+      if (options.persistGuestToken && call.callToken) storeGuestToken(call.callId, call.callToken);
+      else clearStoredGuestToken();
     } catch (e) {
       // Не удалось подключиться - не оставляем "активный" звонок, иначе страница зависнет на "Подключение..."
       useCallSocket().disconnect();
@@ -221,6 +262,7 @@ export const useCall = () => {
   });
 
   const fullRejoin = async (callId: string): Promise<void> => {
+    const previousCallToken = readStoredGuestToken(callId);
     const fresh = await obtainCallToken(callId);
     if (!fresh.callToken) throw new Error("No call token in response");
     if (!activeCall.value || activeCall.value.callId !== callId) return;
@@ -231,9 +273,12 @@ export const useCall = () => {
     await useCallSocket().connect({
       callId: fresh.callId,
       callToken: fresh.callToken,
+      previousCallToken,
       mediaServiceUrl: fresh.mediaServiceUrl,
       handlers: buildSocketHandlers(),
     });
+    if (isGuest.value && fresh.callToken) storeGuestToken(callId, fresh.callToken);
+    else clearStoredGuestToken();
     if (localTracks.audio) await useCallSocket().produce("audio", localTracks.audio);
     if (localTracks.camera) await useCallSocket().produce("camera", localTracks.camera);
     if (localTracks.screen) await useCallSocket().produce("screen", localTracks.screen);
@@ -346,7 +391,7 @@ export const useCall = () => {
     isGuest.value = true;
     guestCredentials.value = { callId, password, name };
     callPassword.value = null;
-    await enterCall(call);
+    await enterCall(call, { persistGuestToken: true });
   };
 
   // Мой id в конференции - из токена (sub). Гость и авторизованный равноправны в звонке.
@@ -387,6 +432,7 @@ export const useCall = () => {
     void disableCamera();
     void stopScreenShare();
     useCallSocket().disconnect();
+    clearStoredGuestToken();
     activeCall.value = null;
     participants.value = {};
     myGroup.value = null;

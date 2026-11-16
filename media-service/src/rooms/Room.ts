@@ -46,6 +46,24 @@ export class Room {
     this.participants.set(participant.userId, participant);
   }
 
+  participantBySession(sessionId: string): Participant | undefined {
+    return [...this.participants.values()].find((participant) => participant.sessionId === sessionId);
+  }
+
+  stateFor(participant: Participant): Record<string, unknown> {
+    return {
+      self: {
+        userId: participant.userId,
+        group: participant.group,
+        producers: [...participant.producers.keys()],
+        sessionId: participant.sessionId,
+      },
+      participants: [...this.participants.values()]
+        .filter((peer) => peer.userId !== participant.userId && !peer.isDetached)
+        .map((peer) => ({ userId: peer.userId, group: peer.group, producers: [...peer.producers.keys()] })),
+    };
+  }
+
   /** Закрывает Transport'ы участника (это каскадно закрывает и его Producer'ы, и Consumer'ы
    *  других на них), убирает его из комнаты и чистит "висящие" подписки остальных на него. */
   removeParticipant(userId: string): Participant | undefined {
@@ -72,13 +90,19 @@ export class Room {
     return participant;
   }
 
+  /** Finalize only if this is still the same detached session (not a resumed replacement). */
+  reapDetached(participant: Participant): Participant | undefined {
+    if (!participant.isDetached || this.participants.get(participant.userId) !== participant) return undefined;
+    return this.removeParticipant(participant.userId);
+  }
+
   get isEmpty(): boolean {
     return this.participants.size === 0;
   }
 
   broadcast(message: Record<string, unknown>, exceptUserId?: string): void {
     for (const participant of this.participants.values()) {
-      if (participant.userId !== exceptUserId) {
+      if (!participant.isDetached && participant.userId !== exceptUserId) {
         participant.send(message);
       }
     }
@@ -87,7 +111,7 @@ export class Room {
   /** Все участники (кроме excludeUserId) с указанной группой - null тоже валидная группа. */
   membersOf(group: string | null, excludeUserId: string): Participant[] {
     return [...this.participants.values()].filter(
-      (p) => p.userId !== excludeUserId && p.group === group
+      (p) => !p.isDetached && p.userId !== excludeUserId && p.group === group
     );
   }
 
@@ -95,6 +119,7 @@ export class Room {
     for (const participant of this.participants.values()) {
       participant.close();
     }
+    this.participants.clear();
     // Закрытие Router'а каскадно закрывает и AudioLevelObserver, который на нём создан.
     this.router.close();
   }

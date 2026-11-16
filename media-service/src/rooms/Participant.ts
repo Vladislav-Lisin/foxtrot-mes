@@ -1,5 +1,6 @@
 import type { WebSocket } from "ws";
 import type { Consumer, Producer, RtpCapabilities, WebRtcTransport } from "mediasoup/types";
+import { randomUUID } from "node:crypto";
 
 // audio/camera/screen/screenAudio - максимум по одному Producer каждого вида на участника
 // одновременно. screenAudio - системный/вкладочный звук вместе с демонстрацией экрана,
@@ -8,7 +9,10 @@ export type ProducerKind = "audio" | "camera" | "screen" | "screenAudio";
 
 export class Participant {
   readonly userId: string;
-  private readonly ws: WebSocket;
+  readonly sessionId: string;
+  private ws: WebSocket;
+  detachedAt: number | null = null;
+  finalized = false;
 
   // null - "без группы" (дефолт), это тоже валидное значение группы само по себе:
   // все участники с group === null слышат друг друга как в обычном звонке без команд.
@@ -28,9 +32,30 @@ export class Participant {
   // до того, как первый успел дописать в consumers, и создают Consumer'ы вдвоём наперегонки.
   readonly pendingConsumes = new Set<string>();
 
-  constructor(userId: string, ws: WebSocket) {
+  constructor(userId: string, ws: WebSocket, sessionId: string = randomUUID()) {
     this.userId = userId;
     this.ws = ws;
+    this.sessionId = sessionId;
+  }
+
+  attach(ws: WebSocket): void {
+    this.ws = ws;
+    this.detachedAt = null;
+    this.finalized = false;
+  }
+
+  detach(ws: WebSocket): boolean {
+    if (this.ws !== ws || this.finalized) return false;
+    this.detachedAt = Date.now();
+    return true;
+  }
+
+  get isDetached(): boolean {
+    return this.detachedAt !== null;
+  }
+
+  get socket(): WebSocket {
+    return this.ws;
   }
 
   send(message: Record<string, unknown>): void {
@@ -39,7 +64,19 @@ export class Participant {
     }
   }
 
+  // Удалён создателем: закрываем соединение с понятным кодом (клиент не будет переподключаться)
+  kick(): void {
+    this.sendTransport?.close();
+    this.recvTransport?.close();
+    this.producers.clear();
+    this.consumers.clear();
+    if (this.ws.readyState === this.ws.OPEN || this.ws.readyState === this.ws.CONNECTING) {
+      this.ws.close(4403, "Removed from call");
+    }
+  }
+
   close(): void {
+    this.finalized = true;
     this.sendTransport?.close();
     this.recvTransport?.close();
     this.producers.clear();

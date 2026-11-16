@@ -64,6 +64,10 @@ async function createConsumerFor(
       listener.send({ type: "consumer-closed", payload: { peerUserId: speaker.userId, kind } });
     });
 
+    consumer.on("layerschange", (layers) => {
+      console.info(`[quality] consumer layer updated spatial=${layers?.spatialLayer ?? "none"} temporal=${layers?.temporalLayer ?? "none"}`);
+    });
+
     listener.send({
       type: "new-consumer",
       payload: {
@@ -125,7 +129,7 @@ export async function syncGroupAudio(room: Room, participant: Participant): Prom
  * но слышна только своей команде, идентично голосу.
  */
 export async function syncVideoWithEveryone(room: Room, participant: Participant): Promise<void> {
-  const peers = [...room.participants.values()].filter((p) => p.userId !== participant.userId);
+  const peers = [...room.participants.values()].filter((p) => !p.isDetached && p.userId !== participant.userId);
   await settleAll(
     peers.flatMap((peer) => [
       createConsumerFor(room, participant, peer, "camera"),

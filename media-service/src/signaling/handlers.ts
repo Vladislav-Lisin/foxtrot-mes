@@ -8,6 +8,7 @@ import {
   handleJoin,
   handleProduce,
   handleResumeConsumer,
+  handleRestartIce,
 } from "./mediaHandlers.js";
 import { handleSwitchGroup } from "./switchGroupHandler.js";
 
@@ -26,6 +27,7 @@ const handlers: Record<string, Handler> = {
   produce: handleProduce,
   "close-producer": handleCloseProducer,
   "resume-consumer": handleResumeConsumer,
+  "restart-ice": handleRestartIce,
   "switch-group": handleSwitchGroup,
 };
 

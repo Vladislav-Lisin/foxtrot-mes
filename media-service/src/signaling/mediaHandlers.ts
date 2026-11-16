@@ -48,10 +48,10 @@ export async function handleCreateTransport(
     initialAvailableOutgoingBitrate: 8_000_000,
   });
 
-  const transportTag = `[ice ${payload.direction} ${participant.userId.slice(0, 8)} ${transport.id.slice(0, 8)}]`;
+  const transportTag = `[ice ${payload.direction} ${transport.id.slice(0, 8)}]`;
   console.log(`${transportTag} created, initial iceState=${transport.iceState}`);
   transport.on("icestatechange", (state) => console.log(`${transportTag} iceState -> ${state}`));
-  transport.on("iceselectedtuplechange", (tuple) => console.log(`${transportTag} selected tuple ->`, JSON.stringify(tuple)));
+  transport.on("iceselectedtuplechange", () => console.log(`${transportTag} selected ICE tuple changed`));
 
   transport.on("dtlsstatechange", (state: DtlsState) => {
     console.log(`${transportTag} dtlsState -> ${state}`);
@@ -80,7 +80,7 @@ export async function handleCreateTransport(
   // отдаём его ВСЕГДА, а TURN (relay) добавляем поверх, если он сконфигурирован (см.
   // coturn/TURN_HOST/TURN_SECRET) - без TURN звонок всё ещё может не пройти при жёстком/
   // симметричном NAT с обеих сторон (типично для мобильных операторов).
-  const iceServers = [{ urls: ["stun:stun.l.google.com:19302"] }, ...(turnServer ? [turnServer] : [])];
+  const iceServers = [...(config.stunUrls.length ? [{ urls: config.stunUrls }] : []), ...(turnServer ? [turnServer] : [])];
 
   return {
     transportId: transport.id,
@@ -89,6 +89,20 @@ export async function handleCreateTransport(
     dtlsParameters: transport.dtlsParameters,
     iceServers,
   };
+}
+
+export async function handleRestartIce(
+  _room: Room,
+  participant: Participant,
+  payload: { direction: "send" | "recv" },
+) {
+  if (payload.direction !== "send" && payload.direction !== "recv") throw new Error("Invalid transport direction");
+  const transport = payload.direction === "send" ? participant.sendTransport : participant.recvTransport;
+  if (!transport || transport.closed) throw new Error(`${payload.direction} transport is not available`);
+  console.info(`[ice] restart requested direction=${payload.direction}`);
+  const iceParameters = await transport.restartIce();
+  console.info(`[ice] restart prepared direction=${payload.direction}`);
+  return { iceParameters };
 }
 
 export async function handleConnectTransport(

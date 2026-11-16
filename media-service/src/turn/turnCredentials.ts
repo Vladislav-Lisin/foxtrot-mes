@@ -27,9 +27,9 @@ export function generateTurnCredentials(userId: string, ttlSeconds = DEFAULT_TTL
 
   return {
     urls: [
-      `turn:${config.turn.host}:3478?transport=udp`,
-      `turn:${config.turn.host}:3478?transport=tcp`,
-      `turns:${config.turn.host}:5349?transport=tcp`,
+      `turn:${config.turn.host}:${config.turn.udpPort}?transport=udp`,
+      `turn:${config.turn.host}:${config.turn.udpPort}?transport=tcp`,
+      `turns:${config.turn.host}:${config.turn.tlsPort}?transport=tcp`,
     ],
     username,
     credential,

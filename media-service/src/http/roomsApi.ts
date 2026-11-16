@@ -33,6 +33,18 @@ roomsRouter.post("/rooms", async (req: Request, res: Response, next: NextFunctio
   }
 });
 
+// Удаление участника создателем (MediaServiceClient.kickParticipant).
+roomsRouter.post("/rooms/:callId/kick", (req: Request<{ callId: string }>, res: Response) => {
+  const { userId } = req.body as { userId?: string };
+  const room = roomManager.getRoom(req.params.callId);
+  const participant = userId ? room?.participants.get(userId) : undefined;
+  if (participant && room) {
+    participant.kick();
+    room.removeParticipant(participant.userId);
+  }
+  res.status(204).send();
+});
+
 // Вызывается из MediaServiceClient.closeRoom(callId) при принудительном завершении звонка.
 roomsRouter.delete("/rooms/:callId", (req: Request<{ callId: string }>, res: Response) => {
   roomManager.closeRoom(req.params.callId);

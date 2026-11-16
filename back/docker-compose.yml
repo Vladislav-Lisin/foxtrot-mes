@@ -112,8 +112,8 @@ services:
       TURN_HOST: ${TURN_HOST:-}
       TURN_SECRET: ${TURN_SECRET:-}
       TURN_UDP_PORT: ${TURN_UDP_PORT:-3478}
-      # nginx owns 443; TURN uses 5349 unless a separate public ingress is configured.
-      TURN_TLS_PORT: ${TURN_TLS_PORT:-5349}
+      # Public TLS/443 is routed by HAProxy using the turn.<domain> SNI.
+      TURN_TLS_PORT: ${TURN_TLS_PORT:-443}
       STUN_URLS: ${STUN_URLS:-stun:stun.l.google.com:19302}
       CALL_SESSION_GRACE_SECONDS: ${CALL_SESSION_GRACE_SECONDS:-45}
       CALL_ROOM_IDLE_SECONDS: ${CALL_ROOM_IDLE_SECONDS:-120}
@@ -142,10 +142,9 @@ services:
       # на backend в рамках ОДНОГО origin, отдельный CORS-запрос на другой хост не нужен.
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:?set NUXT_PUBLIC_API_BASE in .env (https://ваш-домен)}
 
-  # Опционален - только для прода/реальной сети. TURN_HOST должен быть DNS-именем,
-  # а TLS-сертификат coturn должен содержать это имя.
-  # Запуск: docker compose --profile turn up (обычный "docker compose up" его не поднимает,
-  # чтобы локальная разработка без коturn не спотыкалась о обязательный TURN_SECRET).
+  # Опционален - только для прода/реальной сети. TURN_HOST должен быть DNS-именем turn.*,
+  # а TLS-сертификат coturn должен содержать это имя. TLS наружу идёт через HAProxy :443.
+  # Запуск: docker compose --profile proxy --profile turn up.
   coturn:
     image: coturn/coturn:4.6-alpine
     container_name: foxtrot-coturn
@@ -227,6 +226,21 @@ services:
       media-service:
         condition: service_started
       frontend:
+        condition: service_started
+
+  # TCP/TLS SNI multiplexing lets HTTPS and TURN/TLS share public port 443. HAProxy
+  # passes HTTPS to nginx with PROXY protocol and passes turn.* TLS through to coturn.
+  haproxy:
+    image: haproxy:3.2-alpine
+    container_name: foxtrot-haproxy
+    restart: unless-stopped
+    profiles: ["proxy"]
+    network_mode: host
+    volumes:
+      - ../haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    command: ["haproxy", "-W", "-db", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+    depends_on:
+      nginx:
         condition: service_started
 
 volumes:

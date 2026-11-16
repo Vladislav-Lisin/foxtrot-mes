@@ -47,8 +47,9 @@ Configure distinct mediasoup and coturn relay ranges using `MEDIASOUP_RTC_MIN_PO
 test firewall. Block UDP to the mediasoup range while leaving its TCP range and TURN ports
 available. Confirm the ICE selected candidate changes to TCP or relay and audio/video recover.
 Then block UDP entirely on the test client and verify TURN over TLS (`TURN_TLS_PORT`, default
-5349) is selected. The site nginx already owns TCP/443; using TURN/TLS on 443 requires a
-dedicated public IP or a separately configured SNI ingress and matching certificate.
+443) is selected. For port 443, enable compose profiles `proxy` and `turn`, point `TURN_HOST`
+(for example `turn.example.com`) to the server, and provide a coturn certificate containing
+that hostname. HAProxy routes `turn.*` SNI to coturn and HTTPS SNI to nginx.
 
 On a dedicated Linux test client, the direct-SFU UDP case can be simulated with:
 

@@ -579,10 +579,14 @@ export const useCallSocket = () => {
       ...(kind === "camera"
         ? {
             encodings: [
-              { rid: "r0", maxBitrate: 100_000, scaleResolutionDownBy: 4 },
-              { rid: "r1", maxBitrate: 300_000, scaleResolutionDownBy: 2 },
-              { rid: "r2", maxBitrate: 900_000, scaleResolutionDownBy: 1 },
+              { rid: "r0", maxBitrate: 150_000, scaleResolutionDownBy: 4 },
+              { rid: "r1", maxBitrate: 700_000, scaleResolutionDownBy: 2 },
+              { rid: "r2", maxBitrate: 2_500_000, scaleResolutionDownBy: 1 },
             ],
+            // Стартовая подсказка кодировщику: без неё браузер начинает с консервативных
+            // ~300-500 kbps и разгоняется слишком медленно, из-за чего первые секунды
+            // звонка выглядят заметно мягче/пиксельнее.
+            codecOptions: { videoGoogleStartBitrate: 1500, videoGoogleMaxBitrate: 2500, videoGoogleMinBitrate: 300 },
           }
         : {}),
       ...(kind === "screen"

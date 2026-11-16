@@ -473,9 +473,21 @@ export const useCall = () => {
 
   const enableCamera = async () => {
     if (!import.meta.client || cameraEnabled.value) return;
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    // Явные ограничения не дают браузеру выбрать 640x480 по умолчанию. "ideal" не ломает
+    // захват на камерах/устройствах, которые не умеют 1080p30, - браузер возьмёт максимум
+    // доступного. max ограничивает 4K-камеры, чтобы не кодировать лишние пиксели.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 1920, max: 1920 },
+        height: { ideal: 1080, max: 1080 },
+        frameRate: { ideal: 30, max: 30 },
+      },
+    });
     const track = stream.getVideoTracks()[0];
     if (!track) return;
+    // Для камеры важнее плавность движения, а не максимальная детализация статичного кадра
+    // (у демонстрации экрана - наоборот, см. startScreenShare).
+    track.contentHint = "motion";
     localTracks.camera = track;
     await useCallSocket().produce("camera", track);
     cameraEnabled.value = true;

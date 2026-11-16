@@ -1,6 +1,7 @@
 import type { Device } from "mediasoup-client";
 import type { Consumer, DtlsParameters, IceCandidate, IceParameters, Producer, Transport } from "mediasoup-client/types";
 import type { ProducerKind } from "~/types/call";
+import { shouldRestartIce, shouldRetryIceRestart } from "~/utils/iceRestart";
 
 type CreateTransportResult = {
   transportId: string
@@ -268,6 +269,14 @@ async function restartTransportIce(direction: "send" | "recv"): Promise<void> {
   if (!transport || ws?.readyState !== WebSocket.OPEN || iceRestartInFlight.has(direction)) {
     throw new Error("ICE restart is not currently available");
   }
+  // "new" - медиа ещё не публиковалось/не принималось, ICE-транспорт не поднимался.
+  // Перезапускать нечего: иначе звонок без включённых камеры/микрофона уходит в
+  // бесконечный цикл restart-ice и навсегда показывает "Восстанавливаем медиасоединение".
+  if (!shouldRestartIce(transport.connectionState)) {
+    iceRestartAttempts[direction] = 0;
+    handlers.onIceRestartState?.(false, direction);
+    return;
+  }
   iceRestartInFlight.add(direction);
   handlers.onIceRestartState?.(true, direction);
   const startedAt = Date.now();
@@ -277,14 +286,20 @@ async function restartTransportIce(direction: "send" | "recv"): Promise<void> {
     console.info(`[call] ICE restart applied direction=${direction} in ${Date.now() - startedAt}ms`);
     iceRestartTimers[direction] = setTimeout(() => {
       delete iceRestartTimers[direction];
-      if (transport.connectionState !== "connected") {
-        iceRestartInFlight.delete(direction);
+      iceRestartInFlight.delete(direction);
+      if (shouldRetryIceRestart(transport.connectionState)) {
         if (iceRestartAttempts[direction] >= 6) handlers.onRecoveryRequired?.();
         else scheduleIceRestart(direction);
+      } else {
+        if (transport.connectionState === "new" || transport.connectionState === "connected") {
+          iceRestartAttempts[direction] = 0;
+        }
+        handlers.onIceRestartState?.(false, direction);
       }
     }, ICE_RESTART_CHECK_MS);
   } catch (error) {
     iceRestartInFlight.delete(direction);
+    handlers.onIceRestartState?.(false, direction);
     throw error;
   }
 }

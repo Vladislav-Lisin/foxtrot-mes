@@ -243,6 +243,9 @@ services:
     restart: unless-stopped
     profiles: ["proxy"]
     network_mode: host
+    user: "0:0"
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
     volumes:
       - ../haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     command: ["haproxy", "-W", "-db", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]

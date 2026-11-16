@@ -107,7 +107,9 @@ const connectionChangeHandler = () => {
   probeSignaling();
   checkTransportsNow();
 };
-const networkConnection = (navigator as Navigator & { connection?: EventTarget }).connection;
+const networkConnection = typeof navigator === "undefined"
+  ? undefined
+  : (navigator as Navigator & { connection?: EventTarget }).connection;
 
 const producers = new Map<ProducerKind, Producer>();
 const consumers = new Map<string, Map<ProducerKind, Consumer>>();

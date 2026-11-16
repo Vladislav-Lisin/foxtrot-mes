@@ -188,7 +188,11 @@ services:
         EXTRA_ARGS=""
         if [ -n "$$TURN_EXTERNAL_IP" ]; then
           if [ -n "$$TURN_LISTENING_IP" ]; then
-            EXTRA_ARGS="--external-ip=$$TURN_EXTERNAL_IP/$$TURN_LISTENING_IP --relay-ip=$$TURN_LISTENING_IP --listening-ip=$$TURN_LISTENING_IP"
+            if [ "$$TURN_EXTERNAL_IP" = "$$TURN_LISTENING_IP" ]; then
+              EXTRA_ARGS="--external-ip=$$TURN_EXTERNAL_IP --relay-ip=$$TURN_LISTENING_IP --listening-ip=$$TURN_LISTENING_IP"
+            else
+              EXTRA_ARGS="--external-ip=$$TURN_EXTERNAL_IP/$$TURN_LISTENING_IP --relay-ip=$$TURN_LISTENING_IP --listening-ip=$$TURN_LISTENING_IP"
+            fi
           else
             EXTRA_ARGS="--external-ip=$$TURN_EXTERNAL_IP"
           fi

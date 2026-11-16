@@ -1,9 +1,6 @@
 <script setup lang="ts">
-import { formatDuration } from "~/utils/chatTime";
 type Tile = {
   key: string
-  // Чей это тайл (нужен для громкости); у своих тайлов не задан
-  userId?: string
   videoTrack?: MediaStreamTrack
   audioTrack?: MediaStreamTrack
   label: string
@@ -12,20 +9,7 @@ type Tile = {
   speaking?: boolean
 }
 
-const { activeCall, participants, connecting, reconnecting, reconnectFailed, iceRestarting, networkOnline, myGroup, localTracks, screenSharing, micEnabled, cameraEnabled, isGuest, myCallUserId, callNames, guestName, kickParticipant } = useCall();
-
-// Удалять участников может только создатель конференции (и не себя)
-const isCallOwner = computed(() => !!activeCall.value && activeCall.value.ownerId === myCallUserId.value);
-const canKickTile = (tile: Tile) => isCallOwner.value && !tile.isLocal && !!tile.userId && tile.userId !== myCallUserId.value;
-const kickUser = async (userId?: string) => {
-  if (!userId) return;
-  try {
-    await kickParticipant(userId);
-  } catch (e) {
-    const toast = useToast();
-    toast.add({ title: "Не удалось удалить участника", description: e instanceof Error ? e.message : String(e), color: "error" });
-  }
-};
+const { activeCall, participants, connecting, reconnecting, reconnectFailed, iceRestarting, networkOnline, myGroup, localTracks, screenSharing, micEnabled, cameraEnabled, isGuest, myCallUserId, callNames, guestName } = useCall();
 
 // Своё имя: у гостя - то, что он ввёл, у авторизованного - ник
 const myName = computed(() => (isGuest.value ? (guestName.value || "Гость") : (user.value?.username ?? "Вы")));
@@ -44,7 +28,12 @@ onBeforeUnmount(() => {
 const elapsedLabel = computed(() => {
   const started = activeCall.value?.startedAt ? Date.parse(activeCall.value.startedAt) : NaN;
   if (!Number.isFinite(started)) return "";
-  return formatDuration((now.value - started) / 1000);
+  const total = Math.max(0, Math.floor((now.value - started) / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 });
 const { user } = useUserState();
 const { chatPreviews } = useChats();
@@ -101,9 +90,9 @@ const allTiles = computed<Tile[]>(() => {
     tiles.push({ key: "self-screen", videoTrack: localTracks.screen, audioTrack: localTracks.screenAudio, label: `${myName.value} - экран`, isLocal: true, isScreen: true });
   }
   for (const p of participantList.value) {
-    tiles.push({ key: `${p.userId}-camera`, userId: p.userId, videoTrack: p.tracks.camera, audioTrack: p.tracks.audio, label: participantLabel(p.userId), speaking: p.speaking });
+    tiles.push({ key: `${p.userId}-camera`, videoTrack: p.tracks.camera, audioTrack: p.tracks.audio, label: participantLabel(p.userId), speaking: p.speaking });
     if (p.tracks.screen) {
-      tiles.push({ key: `${p.userId}-screen`, userId: p.userId, videoTrack: p.tracks.screen, audioTrack: p.tracks.screenAudio, label: `${participantLabel(p.userId)} - экран`, isScreen: true });
+      tiles.push({ key: `${p.userId}-screen`, videoTrack: p.tracks.screen, audioTrack: p.tracks.screenAudio, label: `${participantLabel(p.userId)} - экран`, isScreen: true });
     }
   }
   return tiles;
@@ -173,9 +162,6 @@ const toggleFullscreen = async () => {
           <CallParticipantTile
             :video-track="tile.videoTrack"
             :audio-track="tile.audioTrack"
-            :user-id="tile.userId"
-        :can-kick="canKickTile(tile)"
-        @kick="kickUser(tile.userId)"
             :label="tile.label"
             :is-local="tile.isLocal"
             :is-screen="tile.isScreen"
@@ -188,9 +174,6 @@ const toggleFullscreen = async () => {
         <CallParticipantTile
           :video-track="spotlightTile.videoTrack"
           :audio-track="spotlightTile.audioTrack"
-          :user-id="spotlightTile.userId"
-          :can-kick="canKickTile(spotlightTile)"
-          @kick="kickUser(spotlightTile.userId)"
           :label="spotlightTile.label"
           :is-local="spotlightTile.isLocal"
           is-screen
@@ -213,9 +196,6 @@ const toggleFullscreen = async () => {
         :key="tile.key"
         :video-track="tile.videoTrack"
         :audio-track="tile.audioTrack"
-        :user-id="tile.userId"
-        :can-kick="canKickTile(tile)"
-        @kick="kickUser(tile.userId)"
         :label="tile.label"
         :is-local="tile.isLocal"
         :is-screen="tile.isScreen"

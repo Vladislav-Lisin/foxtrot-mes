@@ -1,8 +1,9 @@
-import { startCall as apiStartCall, joinCall as apiJoinCall, leaveCall as apiLeaveCall, endCall as apiEndCall, getActiveCallForChat as apiGetActiveCallForChat, guestJoinCall as apiGuestJoinCall } from "~/api/calls";
+import { startCall as apiStartCall, joinCall as apiJoinCall, leaveCall as apiLeaveCall, endCall as apiEndCall, getActiveCallForChat as apiGetActiveCallForChat } from "~/api/calls";
+import { guestJoinCall as apiGuestJoinCall } from "~/api/guestCalls";
 import type { CallResponse, CallNotification, CallParticipantState, ProducerKind } from "~/types/call";
 import { apiBase } from "~/api/apiBase";
-import { kickCallParticipant } from "~/api/calls";
 import { reconnectDelayMs } from "~/utils/reconnectBackoff";
+import { joinCallWithPassword } from "~/api/joinCallWithPassword";
 
 // Хоткеи переключения цветовой группы - "0" снимает группу (обратно в общий канал).
 // Не привязано жёстко к двум цветам - просто пример набора, можно расширять.
@@ -329,14 +330,14 @@ export const useCall = () => {
     if (isGuest.value) {
       return apiGuestJoinCall(callId, guestCredentials.value?.password ?? null, guestCredentials.value?.name ?? "");
     }
-    return apiJoinCall(callId, callPassword.value);
+    return callPassword.value ? joinCallWithPassword(callId, callPassword.value) : apiJoinCall(callId);
   };
 
   const joinExistingCall = async (callId: string, password?: string | null) => {
     isGuest.value = false;
     guestCredentials.value = null;
     callPassword.value = password ?? null;
-    const call = await apiJoinCall(callId, password ?? null);
+    const call = password ? await joinCallWithPassword(callId, password) : await apiJoinCall(callId);
     await enterCall(call);
   };
 
@@ -608,10 +609,6 @@ export const useCall = () => {
     incomingCall,
     joinAsGuest,
     afterCallPath,
-    kickParticipant: async (userId: string) => {
-      if (!activeCall.value) return;
-      await kickCallParticipant(activeCall.value.callId, userId);
-    },
     isGuest,
     myCallUserId,
     callNames,

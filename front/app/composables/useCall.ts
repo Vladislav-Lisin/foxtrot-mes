@@ -1,5 +1,8 @@
-import { startCall as apiStartCall, joinCall as apiJoinCall, leaveCall as apiLeaveCall, endCall as apiEndCall, getActiveCallForChat as apiGetActiveCallForChat } from "~/api/calls";
+import { startCall as apiStartCall, joinCall as apiJoinCall, leaveCall as apiLeaveCall, endCall as apiEndCall, getActiveCallForChat as apiGetActiveCallForChat, guestJoinCall as apiGuestJoinCall } from "~/api/calls";
 import type { CallResponse, CallNotification, CallParticipantState, ProducerKind } from "~/types/call";
+import { apiBase } from "~/api/apiBase";
+import { kickCallParticipant } from "~/api/calls";
+import { reconnectDelayMs } from "~/utils/reconnectBackoff";
 
 // Хоткеи переключения цветовой группы - "0" снимает группу (обратно в общий канал).
 // Не привязано жёстко к двум цветам - просто пример набора, можно расширять.
@@ -11,10 +14,8 @@ const GROUP_HOTKEYS: Record<string, string | null> = {
   0: null,
 };
 
-// Реконнект с задержками по нарастающей - см. attemptReconnect. callToken живёт всего
-// ~60 секунд (см. call.jwt.expiration на Java), поэтому реконнект - это не "переиспользовать
-// старый токен", а полноценный повторный join через REST за свежим.
-const RECONNECT_DELAYS_MS = [2000, 4000, 8000];
+const RECONNECT_MAX_DELAY_MS = 30_000;
+const RECONNECT_FULL_JOIN_AFTER = 5;
 
 let hotkeyListenerAttached = false;
 const localTracks: Partial<Record<ProducerKind, MediaStreamTrack>> = {};
@@ -27,6 +28,8 @@ export const useCall = () => {
   const connecting = useState<boolean>("callConnecting", () => false);
   const reconnecting = useState<boolean>("callReconnecting", () => false);
   const reconnectFailed = useState<boolean>("callReconnectFailed", () => false);
+  const iceRestarting = useState<boolean>("callIceRestarting", () => false);
+  const networkOnline = useState<boolean>("callNetworkOnline", () => true);
   const micEnabled = useState<boolean>("callMicEnabled", () => false);
   const cameraEnabled = useState<boolean>("callCameraEnabled", () => false);
   const screenSharing = useState<boolean>("callScreenSharing", () => false);
@@ -35,6 +38,9 @@ export const useCall = () => {
   const activeCallByChat = useState<Record<string, CallNotification>>("activeCallByChat", () => ({}));
 
   const { user } = useUserState();
+  let reconnectPromise: Promise<void> | null = null;
+  let forceFullRejoin = false;
+  const iceRestartingDirections = new Set<"send" | "recv">();
 
   const setActiveCallForChat = (chatId: string, notification: CallNotification | null) => {
     if (notification) {
@@ -76,7 +82,10 @@ export const useCall = () => {
   // Общие обработчики для первого подключения и для каждой попытки реконнекта -
   // держим в одном месте, чтобы поведение не расходилось между двумя путями.
   const buildSocketHandlers = () => ({
-    onParticipantJoined: (userId: string) => ensureParticipant(userId),
+    onParticipantJoined: (userId: string) => {
+      ensureParticipant(userId);
+      if (activeCall.value) void refreshCallNames(activeCall.value.callId);
+    },
     onParticipantLeft: (userId: string) => removeParticipant(userId),
     onTrack: (peerUserId: string, kind: ProducerKind, track: MediaStreamTrack) => {
       const p = ensureParticipant(peerUserId);
@@ -107,7 +116,38 @@ export const useCall = () => {
       const p = ensureParticipant(userId);
       participants.value = { ...participants.value, [userId]: { ...p, speaking } };
     },
-    onConnectedChange: (connected: boolean, reason?: "intentional" | "ended" | "unexpected") => {
+    onRoomState: (state: {
+      self: { userId: string; group: string | null; producers: ProducerKind[]; sessionId: string }
+      participants: Array<{ userId: string; group: string | null; producers: ProducerKind[] }>
+    }) => {
+      myGroup.value = state.self.group;
+      const next: Record<string, CallParticipantState> = {};
+      for (const peer of state.participants) {
+        if (peer.userId === myCallUserId.value) continue;
+        const existing = participants.value[peer.userId] ?? { userId: peer.userId, group: null, tracks: {}, speaking: false };
+        const activeKinds = new Set(peer.producers);
+        const tracks = Object.fromEntries(Object.entries(existing.tracks).filter(([kind]) => activeKinds.has(kind as ProducerKind))) as CallParticipantState["tracks"];
+        next[peer.userId] = { ...existing, group: peer.group, tracks };
+      }
+      participants.value = next;
+      if (activeCall.value) void refreshCallNames(activeCall.value.callId);
+    },
+    onIceRestartState: (active: boolean, direction?: "send" | "recv") => {
+      if (direction) {
+        if (active) iceRestartingDirections.add(direction);
+        else iceRestartingDirections.delete(direction);
+      }
+      iceRestarting.value = iceRestartingDirections.size > 0;
+    },
+    onRecoveryRequired: () => {
+      forceFullRejoin = true;
+      void attemptReconnect();
+    },
+    onNetworkStatus: (online: boolean) => {
+      networkOnline.value = online;
+      if (online && activeCall.value && !useCallSocket().connected) void attemptReconnect();
+    },
+    onConnectedChange: (connected: boolean, reason?: "intentional" | "ended" | "unexpected" | "session-expired") => {
       if (connected) {
         connecting.value = false;
         reconnecting.value = false;
@@ -120,10 +160,10 @@ export const useCall = () => {
         // (код 4410, см. useCallSocket.client.ts), это не обрыв связи, реконнект не нужен -
         // просто уходим со страницы звонка, как будто сами нажали "выйти".
         cleanupLocal();
-        void navigateTo("/user/panel");
+        void navigateTo(afterCallPath());
         return;
       }
-      if (reason === "unexpected" && activeCall.value) {
+      if ((reason === "unexpected" || reason === "session-expired") && activeCall.value && !connecting.value) {
         void attemptReconnect();
       }
     },
@@ -135,6 +175,7 @@ export const useCall = () => {
 
     connecting.value = true;
     activeCall.value = call;
+    myCallUserId.value = decodeTokenSubject(call.callToken);
     incomingCall.value = null;
     participants.value = {};
     myGroup.value = null;
@@ -146,10 +187,17 @@ export const useCall = () => {
         mediaServiceUrl: call.mediaServiceUrl,
         handlers: buildSocketHandlers(),
       });
+    } catch (e) {
+      // Не удалось подключиться - не оставляем "активный" звонок, иначе страница зависнет на "Подключение..."
+      useCallSocket().disconnect();
+      activeCall.value = null;
+      participants.value = {};
+      throw e;
     } finally {
       connecting.value = false;
     }
 
+    void refreshCallNames(call.callId);
     attachHotkeys();
   };
 
@@ -157,44 +205,104 @@ export const useCall = () => {
   // callToken к этому моменту почти наверняка истёк, так что это полноценный повторный
   // join через REST за свежим токеном, а не просто переоткрытие старого WS. Локальные
   // треки (микрофон/камера/экран) живы независимо от WS - просто заново их анонсируем.
-  const attemptReconnect = async () => {
-    if (!activeCall.value || reconnecting.value) return;
+  const waitForOnlineOrDelay = (delayMs: number, callId: string) => new Promise<void>((resolve) => {
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      window.removeEventListener("online", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, delayMs);
+    window.addEventListener("online", finish, { once: true });
+    if (!activeCall.value || activeCall.value.callId !== callId) finish();
+  });
+
+  const fullRejoin = async (callId: string): Promise<void> => {
+    const fresh = await obtainCallToken(callId);
+    if (!fresh.callToken) throw new Error("No call token in response");
+    if (!activeCall.value || activeCall.value.callId !== callId) return;
+    activeCall.value = fresh;
+    myCallUserId.value = decodeTokenSubject(fresh.callToken);
+    participants.value = {};
+    myGroup.value = null;
+    await useCallSocket().connect({
+      callId: fresh.callId,
+      callToken: fresh.callToken,
+      mediaServiceUrl: fresh.mediaServiceUrl,
+      handlers: buildSocketHandlers(),
+    });
+    if (localTracks.audio) await useCallSocket().produce("audio", localTracks.audio);
+    if (localTracks.camera) await useCallSocket().produce("camera", localTracks.camera);
+    if (localTracks.screen) await useCallSocket().produce("screen", localTracks.screen);
+    if (localTracks.screenAudio) await useCallSocket().produce("screenAudio", localTracks.screenAudio);
+    void refreshCallNames(callId);
+  };
+
+  const attemptReconnect = async (): Promise<void> => {
+    if (reconnectPromise) return reconnectPromise;
+    if (!activeCall.value) return;
     const callId = activeCall.value.callId;
+    const startedAt = Date.now();
     reconnecting.value = true;
     reconnectFailed.value = false;
-
-    for (const delay of RECONNECT_DELAYS_MS) {
-      await new Promise(resolve => setTimeout(resolve, delay));
-      if (!activeCall.value || activeCall.value.callId !== callId) return; // тем временем сами вышли
-
-      try {
-        const fresh = await apiJoinCall(callId);
-        if (!fresh.callToken) throw new Error("No call token in response");
-        activeCall.value = fresh;
-
-        await useCallSocket().connect({
-          callId: fresh.callId,
-          callToken: fresh.callToken,
-          mediaServiceUrl: fresh.mediaServiceUrl,
-          handlers: buildSocketHandlers(),
-        });
-
-        if (localTracks.audio) await useCallSocket().produce("audio", localTracks.audio);
-        if (localTracks.camera) await useCallSocket().produce("camera", localTracks.camera);
-        if (localTracks.screen) await useCallSocket().produce("screen", localTracks.screen);
-
-        reconnecting.value = false;
-        return;
-      } catch (e) {
-        console.error("Reconnect attempt failed:", e);
+    iceRestartingDirections.clear();
+    iceRestarting.value = false;
+    reconnectPromise = (async () => {
+      let attempt = 0;
+      while (activeCall.value?.callId === callId) {
+        if (!navigator.onLine) {
+          networkOnline.value = false;
+          await waitForOnlineOrDelay(1_000, callId);
+          continue;
+        }
+        networkOnline.value = true;
+        try {
+          if (forceFullRejoin || attempt >= RECONNECT_FULL_JOIN_AFTER) {
+            forceFullRejoin = true;
+            await fullRejoin(callId);
+          } else {
+            const call = activeCall.value;
+            if (!call?.callToken) throw new Error("No active call token");
+            await useCallSocket().resume({
+              callId: call.callId,
+              callToken: call.callToken,
+              mediaServiceUrl: call.mediaServiceUrl,
+              handlers: buildSocketHandlers(),
+            });
+          }
+          forceFullRejoin = false;
+          reconnecting.value = false;
+          reconnectFailed.value = false;
+          console.info(`[call] recovered in ${Date.now() - startedAt}ms`);
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "reconnect failed";
+          console.warn(`[call] recovery attempt ${attempt + 1} failed: ${message}`);
+          if (message === "CALL_SESSION_EXPIRED") {
+            forceFullRejoin = true;
+            continue;
+          }
+          attempt += 1;
+          if (Date.now() - startedAt >= 90_000) reconnectFailed.value = true;
+          await waitForOnlineOrDelay(reconnectDelayMs(attempt - 1, Math.random, 1_000, RECONNECT_MAX_DELAY_MS), callId);
+        }
       }
-    }
-
-    reconnecting.value = false;
-    reconnectFailed.value = true;
+    })().finally(() => {
+      reconnectPromise = null;
+      if (!activeCall.value || activeCall.value.callId !== callId) {
+        reconnecting.value = false;
+        reconnectFailed.value = false;
+      }
+    });
+    return reconnectPromise;
   };
 
   const startChatCall = async (chatId: string): Promise<CallResponse> => {
+    isGuest.value = false;
+    guestCredentials.value = null;
+    callPassword.value = null;
     const call = await apiStartCall(chatId);
     // Владельцу notifyChatMembers (Java) push про RINGING не шлёт - без этого карта узнала
     // бы о собственном звонке только когда кто-то другой его примет/он закончится.
@@ -204,15 +312,70 @@ export const useCall = () => {
   };
 
   const startStandaloneCall = async (): Promise<CallResponse> => {
+    isGuest.value = false;
+    guestCredentials.value = null;
+    callPassword.value = null;
     const call = await apiStartCall();
     await enterCall(call);
     return call;
   };
 
-  const joinExistingCall = async (callId: string) => {
-    const call = await apiJoinCall(callId);
+  // Гость - без учётной записи, у него свой токен; авторизованный - обычный вход
+  const isGuest = useState<boolean>("call_is_guest", () => false);
+  const guestCredentials = useState<{ callId: string, password: string | null, name: string } | null>("call_guest_credentials", () => null);
+  const callPassword = useState<string | null>("call_password", () => null);
+
+  const obtainCallToken = async (callId: string) => {
+    if (isGuest.value) {
+      return apiGuestJoinCall(callId, guestCredentials.value?.password ?? null, guestCredentials.value?.name ?? "");
+    }
+    return apiJoinCall(callId, callPassword.value);
+  };
+
+  const joinExistingCall = async (callId: string, password?: string | null) => {
+    isGuest.value = false;
+    guestCredentials.value = null;
+    callPassword.value = password ?? null;
+    const call = await apiJoinCall(callId, password ?? null);
     await enterCall(call);
   };
+
+  const joinAsGuest = async (callId: string, password: string | null, name: string) => {
+    const call = await apiGuestJoinCall(callId, password, name);
+    isGuest.value = true;
+    guestCredentials.value = { callId, password, name };
+    callPassword.value = null;
+    await enterCall(call);
+  };
+
+  // Мой id в конференции - из токена (sub). Гость и авторизованный равноправны в звонке.
+  const myCallUserId = useState<string | null>("call_my_user_id", () => null);
+  // Имена гостей: userId -> имя (у авторизованных имя берём из списка чатов)
+  const callNames = useState<Record<string, string>>("call_guest_names", () => ({}));
+  const guestName = computed(() => guestCredentials.value?.name ?? null);
+
+  const decodeTokenSubject = (token: string): string | null => {
+    try {
+      const payload = token.split(".")[1];
+      if (!payload) return null;
+      const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+      return typeof json.sub === "string" ? json.sub : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const refreshCallNames = async (callId: string) => {
+    try {
+      const response = await fetch(`${apiBase()}/calls/${callId}/names`);
+      if (response.ok) callNames.value = (await response.json()) as Record<string, string>;
+    } catch {
+      // имена - не критично: без них покажем короткий id
+    }
+  };
+
+  // Гостю после звонка предлагаем регистрацию, остальных отправляем в панель
+  const afterCallPath = () => (isGuest.value ? "/guest/after-call" : "/user/panel");
 
   const cleanupLocal = () => {
     detachHotkeys();
@@ -228,6 +391,8 @@ export const useCall = () => {
     myGroup.value = null;
     reconnecting.value = false;
     reconnectFailed.value = false;
+    callPassword.value = null;
+    guestCredentials.value = null;
   };
 
   const leaveActiveCall = async () => {
@@ -441,11 +606,23 @@ export const useCall = () => {
   return {
     activeCall,
     incomingCall,
+    joinAsGuest,
+    afterCallPath,
+    kickParticipant: async (userId: string) => {
+      if (!activeCall.value) return;
+      await kickCallParticipant(activeCall.value.callId, userId);
+    },
+    isGuest,
+    myCallUserId,
+    callNames,
+    guestName,
     participants,
     myGroup,
     connecting,
     reconnecting,
     reconnectFailed,
+    iceRestarting,
+    networkOnline,
     micEnabled,
     cameraEnabled,
     screenSharing,

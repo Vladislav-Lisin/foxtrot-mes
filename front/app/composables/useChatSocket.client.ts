@@ -1,5 +1,5 @@
 import SockJS from "sockjs-client"
-import { Client, type IMessage, type StompSubscription } from "@stomp/stompjs"
+import { Client, ReconnectionTimeMode, type IMessage, type StompSubscription } from "@stomp/stompjs"
 import type { ChatMessage, ChatPreviewDTO } from "~/types/chat"
 import type { CallNotification } from "~/types/call"
 import { refreshAccessToken } from "~/api/auth"
@@ -19,6 +19,15 @@ let previewsSub: StompSubscription | null = null
 let personalSub: StompSubscription | null = null
 let callsSub: StompSubscription | null = null
 let currentHandlers: ChatSocketHandlers | null = null
+let onlineListenerAttached = false
+
+const reconnectOnOnline = () => {
+  if (!client?.active || client.connected) return
+  const current = client
+  void current.deactivate({ force: true }).then(() => {
+    if (client === current && currentHandlers) current.activate()
+  })
+}
 
 function safeJson<T>(frame: IMessage): T | null {
   try {
@@ -77,7 +86,11 @@ export const useChatSocket = () => {
           new SockJS(
             `${baseHttpUrl}/ws?access_token=${encodeURIComponent(params.accessToken)}`
           ),
-        reconnectDelay: 2000,
+        // STOMP.js provides exponential backoff; randomize each client's base delay to
+        // avoid a reconnect herd when a whole room returns online together.
+        reconnectDelay: Math.floor(1000 + Math.random() * 1000),
+        reconnectTimeMode: ReconnectionTimeMode.EXPONENTIAL,
+        maxReconnectDelay: 30_000,
         heartbeatIncoming: 10000,
         heartbeatOutgoing: 10000,
         connectHeaders: {
@@ -119,11 +132,20 @@ export const useChatSocket = () => {
       }
     }
 
+    if (!onlineListenerAttached) {
+      window.addEventListener("online", reconnectOnOnline);
+      onlineListenerAttached = true;
+    }
+
     client.activate()
     return client
   }
 
   const disconnect = async () => {
+    if (onlineListenerAttached) {
+      window.removeEventListener("online", reconnectOnOnline);
+      onlineListenerAttached = false;
+    }
     previewsSub?.unsubscribe()
     personalSub?.unsubscribe()
     callsSub?.unsubscribe()
